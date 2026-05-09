@@ -1,0 +1,257 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply font-sans bg-slate-50 text-slate-800 antialiased;
+  }
+}
+
+@layer components {
+  /* ── Cards ──────────────────────────────────────────────────────── */
+  .card {
+    @apply bg-white rounded-2xl shadow-sm border border-slate-100 p-4;
+  }
+  .card-glass {
+    @apply bg-white/80 backdrop-blur-md rounded-2xl shadow-md border border-white/60 p-4;
+  }
+
+  /* ── Buttons ─────────────────────────────────────────────────────── */
+  .btn-primary {
+    @apply bg-brand-600 hover:bg-brand-700 active:scale-95 text-white font-semibold
+           py-3.5 px-6 rounded-xl transition-all duration-200 shadow-md shadow-brand-200
+           disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100
+           flex items-center justify-center gap-2 w-full text-base;
+  }
+  .btn-ghost {
+    @apply border border-slate-200 hover:border-brand-300 hover:bg-brand-50
+           active:scale-95 text-slate-600 font-medium py-2.5 px-4 rounded-xl
+           transition-all duration-200 flex items-center justify-center gap-2;
+  }
+  .btn-danger {
+    @apply bg-red-500 hover:bg-red-600 active:scale-95 text-white font-semibold
+           py-3 px-5 rounded-xl transition-all duration-200 shadow-md shadow-red-200
+           disabled:opacity-50 flex items-center justify-center gap-2;
+  }
+  .btn-success {
+    @apply bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white font-semibold
+           py-3 px-5 rounded-xl transition-all duration-200 shadow-md shadow-emerald-200
+           disabled:opacity-50 flex items-center justify-center gap-2;
+  }
+  .btn-sm {
+    @apply py-2 px-4 text-sm rounded-lg;
+  }
+
+  /* ── Typography ─────────────────────────────────────────────────── */
+  .badge {
+    @apply inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full;
+  }
+  .section-title {
+    @apply text-sm font-semibold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2;
+  }
+
+  /* ── Auth Page ───────────────────────────────────────────────────── */
+  .auth-page {
+    @apply min-h-screen bg-gradient-to-br from-brand-50 via-white to-slate-100
+           flex items-center justify-center px-4 py-8 relative overflow-hidden;
+  }
+  .auth-orb {
+    @apply absolute -top-32 -right-32 w-96 h-96 rounded-full
+           bg-gradient-to-br from-brand-200/40 to-brand-400/20 blur-3xl pointer-events-none;
+  }
+  .auth-orb-2 {
+    @apply absolute -bottom-32 -left-32 w-80 h-80 rounded-full
+           bg-gradient-to-br from-purple-200/30 to-brand-300/20 blur-3xl pointer-events-none;
+  }
+  .auth-card {
+    @apply relative z-10 w-full max-w-sm bg-white rounded-3xl shadow-2xl shadow-brand-100/50
+           border border-slate-100 p-8;
+  }
+  .auth-label {
+    @apply block text-sm font-semibold text-slate-700 mb-1.5;
+  }
+  .auth-input {
+    @apply w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800
+           placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-300
+           focus:border-brand-400 focus:bg-white transition-all duration-200;
+  }
+  .auth-error {
+    @apply bg-red-50 border border-red-200 text-red-600 rounded-xl px-4 py-3;
+  }
+
+  /* ── Pillbox Slots ───────────────────────────────────────────────── */
+  .pillbox-slot {
+    @apply rounded-2xl border-2 p-4 transition-all duration-200;
+  }
+  .pillbox-slot-morning {
+    @apply bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200;
+  }
+  .pillbox-slot-afternoon {
+    @apply bg-gradient-to-br from-sky-50 to-blue-50 border-sky-200;
+  }
+  .pillbox-slot-night {
+    @apply bg-gradient-to-br from-indigo-50 to-purple-50 border-indigo-200;
+  }
+  .pill-item {
+    @apply flex items-center gap-3 p-3 rounded-xl bg-white border border-slate-100 shadow-sm
+           transition-all duration-200 hover:border-brand-200 hover:shadow-md;
+  }
+  .pill-taken {
+    @apply bg-emerald-50 border-emerald-200;
+  }
+  .pill-missed {
+    @apply bg-red-50 border-red-200;
+  }
+  .pill-pending {
+    @apply bg-white border-slate-100;
+  }
+
+  /* ── Doctor Dashboard ────────────────────────────────────────────── */
+  .doctor-sidebar {
+    @apply w-full bg-white border-b border-slate-100;
+  }
+  .doctor-patient-row {
+    @apply flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all duration-150
+           hover:bg-brand-50 border border-transparent hover:border-brand-100;
+  }
+  .doctor-patient-row-active {
+    @apply bg-brand-50 border-brand-200;
+  }
+
+  /* ── Modal ───────────────────────────────────────────────────────── */
+  .modal-overlay {
+    @apply fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end justify-center
+           sm:items-center px-4 pb-4 sm:pb-0;
+  }
+  .modal-panel {
+    @apply w-full max-w-sm bg-white rounded-3xl shadow-2xl border border-slate-100 p-6
+           animate-slide-up;
+  }
+
+  /* ── Status Chips ────────────────────────────────────────────────── */
+  .status-taken {
+    @apply bg-emerald-100 text-emerald-700 border-emerald-200;
+  }
+  .status-pending {
+    @apply bg-amber-100 text-amber-700 border-amber-200;
+  }
+  .status-missed {
+    @apply bg-red-100 text-red-700 border-red-200;
+  }
+
+  /* ── Timeline ────────────────────────────────────────────────────── */
+  .timeline-item {
+    @apply flex gap-3 relative;
+  }
+  .timeline-dot {
+    @apply w-3 h-3 rounded-full border-2 flex-shrink-0 mt-1.5;
+  }
+  .timeline-line {
+    @apply absolute left-[5px] top-4 bottom-0 w-0.5 bg-slate-100;
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Chat scroll area */
+.chat-scroll {
+  scroll-behavior: smooth;
+}
+
+/* Drag & drop active state */
+.drop-active {
+  @apply border-brand-400 bg-brand-50;
+}
+
+/* ── Spinner ─────────────────────────────────────────────────────────── */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spinner {
+  animation: spin 0.8s linear infinite;
+}
+
+/* ── Pulse ring (mic active) ─────────────────────────────────────────── */
+@keyframes ping-ring {
+  75%, 100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+.ping-ring {
+  animation: ping-ring 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* ── Slide up (cards appear) ─────────────────────────────────────────── */
+@keyframes slide-up {
+  from { transform: translateY(16px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+.animate-slide-up {
+  animation: slide-up 0.28s ease-out both;
+}
+
+/* ── Slide down ──────────────────────────────────────────────────────── */
+@keyframes slide-down {
+  from { transform: translateY(-12px); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+.animate-slide-down {
+  animation: slide-down 0.25s ease-out both;
+}
+
+/* ── Fade in ─────────────────────────────────────────────────────────── */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out both;
+}
+
+/* ── Scale in ────────────────────────────────────────────────────────── */
+@keyframes scale-in {
+  from { transform: scale(0.92); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+.animate-scale-in {
+  animation: scale-in 0.25s ease-out both;
+}
+
+/* ── Slow pulse (status dots) ────────────────────────────────────────── */
+@keyframes pulse-slow {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+.animate-pulse-slow {
+  animation: pulse-slow 2s ease-in-out infinite;
+}
+
+/* ── Shimmer skeleton ────────────────────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 400px 100%;
+  animation: shimmer 1.4s ease infinite;
+}
