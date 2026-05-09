@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "Medisync",
+    "slug": "medisync-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#2563eb"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.medisync.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Medisync needs camera access to scan prescriptions.",
+        "NSPhotoLibraryUsageDescription": "Medisync needs photo library access to upload prescriptions.",
+        "NSMicrophoneUsageDescription": "Medisync uses microphone for voice commands and chatbot interaction."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#2563eb"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.medisync.app"
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Medisync to access your photos to upload prescriptions.",
+          "cameraPermission": "Allow Medisync to use your camera to scan prescriptions."
+        }
+      ]
+    ]
+  }
+}
