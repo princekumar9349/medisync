@@ -8,10 +8,18 @@ Provides:
 
 import hashlib
 import logging
+import os
 from typing import Dict, Tuple
 
 import cv2
 import numpy as np
+
+# ── Disable OneDNN/MKL-DNN before PaddlePaddle is imported ──────────────────
+# Prevents: "ConvertPirAttribute2RuntimeAttribute not support
+#            [pir::ArrayAttribute<pir::DoubleAttribute>]" on CPUs whose
+# OneDNN support is incomplete (common on Linux with older microarchitectures).
+os.environ.setdefault("FLAGS_use_mkldnn", "0")
+os.environ.setdefault("PADDLE_DISABLE_MKLDNN", "1")
 
 # Lazy load PaddleOCR to avoid massive import times blocking startup unless needed
 _paddle_ocr = None
@@ -28,9 +36,10 @@ def get_ocr_model():
     if _paddle_ocr is None:
         logger.info("🔍 Loading PaddleOCR model (first load may take a moment)...")
         from paddleocr import PaddleOCR
-        # use_angle_cls=True helps with rotated prescriptions
-        _paddle_ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
-        logger.info("✅ PaddleOCR ready.")
+        # use_angle_cls=True  → handles rotated prescriptions
+        # enable_mkldnn=False → avoids OneDNN runtime errors on incompatible CPUs
+        _paddle_ocr = PaddleOCR(use_angle_cls=True, lang='en', enable_mkldnn=False)
+        logger.info(" PaddleOCR ready.")
     return _paddle_ocr
 
 
@@ -38,7 +47,7 @@ def preprocess_image(image_bytes: bytes) -> np.ndarray:
     """
     Convert raw image bytes to a preprocessed NumPy array for PaddleOCR.
 
-    ⚠️  IMPORTANT: PaddleOCR expects a COLOR (BGR) or GRAYSCALE image.
+     IMPORTANT: PaddleOCR expects a COLOR (BGR) or GRAYSCALE image.
     Do NOT pass a hard-binarized (black & white) image — it destroys
     the ink strokes that the recognition model relies on.
 
@@ -106,16 +115,16 @@ def run_ocr(image_bytes: bytes) -> Tuple[str, float, list]:
     img_hash = hashlib.md5(image_bytes).hexdigest()
 
     if img_hash in _ocr_cache:
-        logger.info(f"📦 OCR cache hit — hash: {img_hash[:8]}...")
+        logger.info(f" OCR cache hit — hash: {img_hash[:8]}...")
         text, conf = _ocr_cache[img_hash]
         return text, conf, []
 
     # ── 2. Preprocess ──────────────────────────────────────────────
-    logger.info("🖼️  Preprocessing image for PaddleOCR...")
+    logger.info("Preprocessing image for PaddleOCR...")
     try:
         processed = preprocess_image(image_bytes)
     except Exception as pre_err:
-        logger.warning(f"⚠️ Preprocessing failed ({pre_err}), using raw image")
+        logger.warning(f" Preprocessing failed ({pre_err}), using raw image")
         nparr = np.frombuffer(image_bytes, np.uint8)
         processed = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
@@ -124,15 +133,15 @@ def run_ocr(image_bytes: bytes) -> Tuple[str, float, list]:
     ocr_model = get_ocr_model()
 
     # PaddleOCR returns: [[ [bbox, ('text', confidence)], ... ]]
-    result = ocr_model.ocr(processed, cls=True)
+    result = ocr_model.ocr(processed)
 
     # Handle None result or empty pages
     if not result or result[0] is None or len(result[0]) == 0:
         # Try again with raw undecoded image as fallback
-        logger.warning("⚠️ No text found on preprocessed image — retrying with raw image")
+        logger.warning("No text found on preprocessed image — retrying with raw image")
         nparr = np.frombuffer(image_bytes, np.uint8)
         raw_img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        result = ocr_model.ocr(raw_img, cls=True)
+        result = ocr_model.ocr(raw_img)
 
     if not result or result[0] is None or len(result[0]) == 0:
         raise ValueError("No readable text found in the uploaded image.")
@@ -161,7 +170,7 @@ def run_ocr(image_bytes: bytes) -> Tuple[str, float, list]:
     extracted_text = " \n ".join(extracted_lines).strip()
     avg_confidence = total_confidence / count if count > 0 else 0.0
 
-    logger.info(f"📝 OCR extracted {len(extracted_text)} chars, {count} lines. Avg confidence: {avg_confidence:.2f}")
+    logger.info(f" OCR extracted {len(extracted_text)} chars, {count} lines. Avg confidence: {avg_confidence:.2f}")
 
     # ── 4. Cache & return ─────────────────────────────────────────
     _ocr_cache[img_hash] = (extracted_text, avg_confidence)

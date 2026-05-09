@@ -236,3 +236,55 @@ class PatientListOut(BaseModel):
 
 class PatientListResponse(BaseModel):
     patients: List[PatientListOut]
+
+
+# ─── Prescription Intelligence (Advanced /scan/analyze) ──────────────────────
+
+class PrescriptionMedicineDetail(BaseModel):
+    """Single medicine with full pharmaceutical intelligence."""
+    name: Optional[str] = None
+    normalized_name: Optional[str] = None
+    dosage: Optional[str] = None
+    timing_raw: Optional[str] = None
+    timing_interpreted: Optional[str] = None
+    duration: Optional[str] = None
+    food_instruction: Optional[str] = None
+    purpose: Optional[str] = None
+    confidence: Optional[str] = None  # "high", "medium", "low"
+
+
+class PatientSummary(BaseModel):
+    """Clinical summary extracted from the prescription."""
+    probable_conditions: List[str] = []
+    symptoms: List[str] = []
+    medical_advice: List[str] = []
+    follow_up: Optional[str] = None
+    risk_flags: List[str] = []
+
+
+class PatientMemory(BaseModel):
+    """
+    Long-term patient memory object for chatbot continuity.
+    Accumulated across multiple prescriptions — never replaced, always merged.
+    """
+    active_conditions: List[str] = []
+    chronic_conditions: List[str] = []
+    medicine_history: List[str] = []
+    allergies: List[str] = []
+    health_risks: List[str] = []
+    important_notes: List[str] = []
+
+
+class PrescriptionIntelligenceResponse(BaseModel):
+    """
+    Full structured response from POST /scan/analyze.
+    Contains everything needed for clinical decision support.
+    """
+    patient_summary: PatientSummary = Field(default_factory=PatientSummary)
+    medicines: List[PrescriptionMedicineDetail] = []
+    tests_recommended: List[str] = []
+    doctor_notes: List[str] = []
+    patient_memory: PatientMemory = Field(default_factory=PatientMemory)
+    # Audit fields (not in user-facing JSON spec, but stored in DB)
+    raw_ocr_text: Optional[str] = None
+    ocr_confidence: Optional[float] = None

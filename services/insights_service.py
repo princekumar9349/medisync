@@ -57,7 +57,7 @@ def analyze_adherence(user_id: str) -> InsightReport:
         ).sort("timestamp", 1)      # ascending for consecutive-miss detection
     )
 
-    logger.info(f"📊 Analyzing {len(logs)} dose logs for user {user_id[:8]}...")
+    logger.info(f"Analyzing {len(logs)} dose logs for user {user_id[:8]}...")
 
     # ── 2. Count events ───────────────────────────────────────────
     taken = sum(1 for l in logs if l.get("status") == "taken")
@@ -107,7 +107,7 @@ def analyze_adherence(user_id: str) -> InsightReport:
                 {"$set": doc},
                 upsert=True
             )
-            logger.info(f"💾 Insight report saved for user {user_id[:8]}...")
+            logger.info(f" Insight report saved for user {user_id[:8]}...")
         except Exception as db_err:
             logger.warning(f"Could not save insight: {db_err}")
 

@@ -57,7 +57,7 @@ def check_and_send_reminders() -> None:
         "night": 21,
     }
 
-    logger.info(f"⏰ Scheduler running reminder check at {now.strftime('%H:%M UTC')}")
+    logger.info(f"Scheduler running reminder check at {now.strftime('%H:%M UTC')}")
 
     try:
         # Fetch prescriptions that are not yet fully expired
@@ -124,12 +124,12 @@ def check_and_send_reminders() -> None:
                             _send_push_to_user(user_id, med_name, slot)
 
         if reminder_count:
-            logger.info(f"✅ Scheduler: {reminder_count} reminder(s) sent this cycle.")
+            logger.info(f"Scheduler: {reminder_count} reminder(s) sent this cycle.")
         else:
-            logger.info("✅ Scheduler: No reminders needed this cycle.")
+            logger.info("Scheduler: No reminders needed this cycle.")
 
     except Exception as e:
-        logger.error(f"❌ Scheduler error: {e}", exc_info=True)
+        logger.error(f" Scheduler error: {e}", exc_info=True)
 
 
 # ─── Startup ──────────────────────────────────────────────────────────────────
@@ -155,14 +155,14 @@ def start_scheduler() -> None:
     )
 
     _scheduler.start()
-    logger.info("⏰ Medication reminder scheduler started (every 30 minutes).")
+    logger.info(" Medication reminder scheduler started (every 30 minutes).")
 
 
 def stop_scheduler() -> None:
     """Gracefully shut down the scheduler (called on app shutdown)."""
     if _scheduler.running:
         _scheduler.shutdown(wait=False)
-        logger.info("⏰ Scheduler stopped.")
+        logger.info(" Scheduler stopped.")
 
 
 # ─── Push Notification Helper ─────────────────────────────────────────────────
@@ -194,5 +194,5 @@ def _send_push_to_user(user_id: str, med_name: str, slot: str) -> None:
             data={"med_name": med_name, "slot": slot, "type": "medication_reminder"},
         )
     except Exception as e:
-        logger.warning(f"⚠️ Could not send push for user {str(user_id)[:8]}: {e}")
+        logger.warning(f" Could not send push for user {str(user_id)[:8]}: {e}")
 
