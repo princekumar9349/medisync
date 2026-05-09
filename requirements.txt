@@ -1,11 +1,7 @@
-# Medisync Backend — Python Dependencies
-# Install with: pip install -r requirements.txt
 
-# ── Web Framework ──────────────────────────────────────────────────
 fastapi>=0.111.0
 uvicorn[standard]>=0.30.0
 
-# ── Image Processing / OCR / NLP ───────────────────────────────────
 opencv-python-headless>=4.9.0.80
 paddlepaddle
 paddleocr
@@ -13,25 +9,24 @@ thefuzz
 python-Levenshtein
 numpy>=1.26.0
 
-# ── HTTP Client (for Groq API calls) ──────────────────────────────
 requests>=2.31.0
 
-# ── Database ───────────────────────────────────────────────────────
+
 pymongo>=4.7.0
 
-# ── Data Validation ────────────────────────────────────────────────
+
 pydantic>=2.7.0
 email-validator>=2.1.0
 
-# ── Authentication (JWT + Password Hashing) ────────────────────────
+
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
 
-# ── Background Scheduler (Medication Reminders) ───────────────────
+
 apscheduler>=3.10.4
 
-# ── Environment Variables ──────────────────────────────────────────
+
 python-dotenv>=1.0.0
 
-# ── File Upload Support ────────────────────────────────────────────
+
 python-multipart>=0.0.9

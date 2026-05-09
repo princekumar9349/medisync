@@ -95,6 +95,16 @@ def chat(
         except Exception as e:
             logger.warning(f"Could not fetch missed dose context: {e}")
 
+    # ── Inject accumulated patient memory ─────────────────────────
+    try:
+        from services.prescription_intelligence import get_patient_memory_for_chat
+        patient_mem = get_patient_memory_for_chat(current_user.user_id)
+        if patient_mem:
+            enriched_user_data["patient_memory"] = patient_mem
+            logger.info(f"🧠 Injected patient memory for user {current_user.user_id[:8]}...")
+    except Exception as e:
+        logger.warning(f"Could not fetch patient memory for chat: {e}")
+
     # ── Call Groq LLM ─────────────────────────────────────────────
     logger.info(
         f"💬 Chat request from user {current_user.user_id[:8]}... "

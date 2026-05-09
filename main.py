@@ -32,14 +32,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# ─── Internal Modules ─────────────────────────────────────────────────────────
+# Internal Modules 
 from db import database
 from services.scheduler import start_scheduler, stop_scheduler
 
-# ─── Routers ──────────────────────────────────────────────────────────────────
+# Routers 
 from routers import auth, scan, tracking, user, chat, voice, doctor
 
-# ─── Logging Setup ────────────────────────────────────────────────────────────
+# Logging Setup 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(name)-22s | %(levelname)-8s | %(message)s",
@@ -48,7 +48,7 @@ logging.basicConfig(
 logger = logging.getLogger("Medisync")
 
 
-# ─── Lifespan (Startup / Shutdown) ────────────────────────────────────────────
+#  Lifespan (Startup / Shutdown) 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -74,12 +74,12 @@ async def lifespan(app: FastAPI):
     logger.info(" Shutdown complete.")
 
 
-# ─── FastAPI App ──────────────────────────────────────────────────────────────
+# FastAPI App 
 
 app = FastAPI(
     title="Medisync API",
     description=(
-        "🏥 **Medisync** — Intelligent Medication Adherence System\n\n"
+        " **Medisync** — Intelligent Medication Adherence System\n\n"
         "Features: Prescription OCR, LLM Parsing, JWT Auth, "
         "Dose Tracking, AI Insights, Hindi/English Chatbot, Reminder Scheduler."
     ),
@@ -89,7 +89,7 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# ─── CORS Middleware ──────────────────────────────────────────────────────────
+# CORS Middleware 
 
 app.add_middleware(
     CORSMiddleware,
@@ -99,7 +99,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─── Mount Routers ────────────────────────────────────────────────────────────
+#  Mount Routers 
 
 app.include_router(auth.router)       # /auth/register, /auth/login
 app.include_router(scan.router)       # /scan
@@ -110,7 +110,7 @@ app.include_router(doctor.router)     # /doctor/message, /doctor/messages
 app.include_router(voice.router)      # /voice-reminder, /notify
 
 
-# ─── Health Check ─────────────────────────────────────────────────────────────
+# Health Check 
 
 @app.get("/health-check", tags=["System"], summary="API and database health status")
 def health_check():
@@ -136,7 +136,7 @@ def root():
     }
 
 
-# ─── Entrypoint ───────────────────────────────────────────────────────────────
+# Entrypoint 
 
 if __name__ == "__main__":
     uvicorn.run(

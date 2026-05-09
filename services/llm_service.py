@@ -115,16 +115,16 @@ def call_llm(
 
     for attempt in range(1, max_retries + 1):
         try:
-            logger.info(f"🤖 Calling Groq LLM (attempt {attempt}/{max_retries})...")
+            logger.info(f"Calling Groq LLM (attempt {attempt}/{max_retries})...")
             resp = requests.post(GROQ_API_URL, headers=headers, json=payload, timeout=30)
             resp.raise_for_status()
 
             raw_content = resp.json()["choices"][0]["message"]["content"]
-            logger.info(f"📨 LLM raw response: {raw_content[:300]}...")
+            logger.info(f" LLM raw response: {raw_content[:300]}...")
 
             cleaned = _clean_json(raw_content)
             parsed = json.loads(cleaned)
-            logger.info(f"✅ LLM JSON parsed successfully.")
+            logger.info(f" LLM JSON parsed successfully.")
             return parsed
 
         except requests.exceptions.HTTPError as http_err:
@@ -135,9 +135,9 @@ def call_llm(
             logger.error(f"Request error (attempt {attempt}): {req_err}")
 
         if attempt < max_retries:
-            logger.info("🔁 Retrying LLM call...")
+            logger.info(" Retrying LLM call...")
 
-    logger.error("❌ All LLM retry attempts exhausted — returning empty dict.")
+    logger.error(" All LLM retry attempts exhausted — returning empty dict.")
     return {}
 
 
@@ -147,7 +147,7 @@ def fallback_parse_medicines(unknown_text: str) -> list:
     """
     Call LLM to extract medicine list from unknown OCR text fragments.
     
-    ⚠️  We intentionally do NOT validate against MEDICINE_DICTIONARY here —
+    We intentionally do NOT validate against MEDICINE_DICTIONARY here —
     the whole point of the fallback is to handle medicines not in our dictionary
     (e.g. Indian brand names like Udiliv, Alphacin, Upmune, Chymoral Plus).
     
@@ -170,7 +170,7 @@ def fallback_parse_medicines(unknown_text: str) -> list:
         # Accept the LLM result as-is (it was trained on medical data)
         med["confidence"] = 0.75   # mark as LLM-sourced, moderate confidence
         valid_medicines.append(med)
-        logger.info(f"✅ LLM fallback extracted: '{name}'")
+        logger.info(f"LLM fallback extracted: '{name}'")
 
     return valid_medicines
 
@@ -185,6 +185,96 @@ def parse_insights(ocr_text: str) -> dict:
     """
     full_prompt = f"OCR Text from prescription:\n\n{ocr_text}"
     return call_llm(_PROMPT_INSIGHTS, full_prompt)
+
+
+# ─── Advanced Prescription Intelligence ──────────────────────────────────────
+
+_PROMPT_PRESCRIPTION_INTELLIGENCE = """You are an advanced medical prescription understanding AI.
+
+Your job is to analyze OCR text from a prescription image and extract structured medical intelligence.
+
+The prescription may contain messy handwriting, abbreviations, partial words, mixed English terminology, and incomplete dosage instructions. Use contextual reasoning to infer the most likely interpretation.
+
+SCHEDULE PARSING RULES:
+- 1-0-1 → morning + night
+- 1-1-1 → morning + afternoon + night
+- 0-0-1 → night only
+- SOS → as needed
+- OD → once daily
+- BD → twice daily
+- TDS → three times daily
+- HS → before sleep
+- AC → before food
+- PC → after food
+
+MEDICINE NORMALIZATION RULES:
+Correct likely OCR mistakes using medical context. Map brand names to generic names.
+Never hallucinate dangerous medicines. If uncertain, set confidence to "low".
+
+DISEASE EXTRACTION RULES:
+Extract diagnosis, probable disease, symptoms, infection type, chronic conditions.
+- URI → Upper Respiratory Infection
+- HTN → Hypertension
+- DM → Diabetes Mellitus
+
+OUTPUT FORMAT — Return ONLY valid JSON with this exact structure:
+{
+  "patient_summary": {
+    "probable_conditions": [],
+    "symptoms": [],
+    "medical_advice": [],
+    "follow_up": "",
+    "risk_flags": []
+  },
+  "medicines": [
+    {
+      "name": "",
+      "normalized_name": "",
+      "dosage": "",
+      "timing_raw": "",
+      "timing_interpreted": "",
+      "duration": "",
+      "food_instruction": "",
+      "purpose": "",
+      "confidence": ""
+    }
+  ],
+  "tests_recommended": [],
+  "doctor_notes": [],
+  "patient_memory": {
+    "active_conditions": [],
+    "chronic_conditions": [],
+    "medicine_history": [],
+    "allergies": [],
+    "health_risks": [],
+    "important_notes": []
+  }
+}
+
+Use null if information is unavailable.
+Maintain strict JSON validity.
+Do not add markdown, explanation, or extra text.
+"""
+
+
+def analyze_prescription_deep(ocr_text: str) -> dict:
+    """
+    Call Groq LLM with the full prescription intelligence prompt.
+
+    This is the LLM enrichment pass — called AFTER the deterministic parser
+    has done its work. The LLM fills gaps: disease inference, patient memory,
+    advice, risk flags, and normalizes anything the regex couldn't.
+
+    Returns:
+        Full structured dict matching PrescriptionIntelligenceResponse schema, or {} on failure.
+    """
+    full_prompt = f"Raw OCR Text from prescription:\n\n{ocr_text}"
+    result = call_llm(_PROMPT_PRESCRIPTION_INTELLIGENCE, full_prompt, temperature=0.0)
+
+    if not result:
+        logger.warning("LLM prescription intelligence returned empty — using deterministic-only results.")
+
+    return result
 
 
 def chat_with_groq(
@@ -229,6 +319,24 @@ def chat_with_groq(
             "Gently remind them to take their medicine."
         )
 
+    # Build patient memory context (accumulated from prescription scans)
+    memory_context = ""
+    patient_mem = user_data.get("patient_memory", {})
+    if patient_mem:
+        mem_parts = []
+        if patient_mem.get("active_conditions"):
+            mem_parts.append(f"Active conditions: {', '.join(patient_mem['active_conditions'])}")
+        if patient_mem.get("chronic_conditions"):
+            mem_parts.append(f"Chronic conditions: {', '.join(patient_mem['chronic_conditions'])}")
+        if patient_mem.get("medicine_history"):
+            mem_parts.append(f"Medicine history: {', '.join(patient_mem['medicine_history'][-10:])}")
+        if patient_mem.get("allergies"):
+            mem_parts.append(f"Known allergies: {', '.join(patient_mem['allergies'])}")
+        if patient_mem.get("health_risks"):
+            mem_parts.append(f"Health risks: {', '.join(patient_mem['health_risks'])}")
+        if mem_parts:
+            memory_context = "\n\nPatient Medical History (from previous prescriptions):\n" + "\n".join(mem_parts)
+
     system_prompt = f"""You are Medisync, a friendly and safe healthcare assistant for medication adherence.
 
 {lang_instruction}
@@ -239,8 +347,10 @@ Guidelines:
 - NEVER recommend changing doses or stopping medicine without doctor advice.
 - NEVER diagnose serious conditions.
 - If the question is outside your scope, say 'Please consult your doctor.'
+- Use the patient's medical history to give personalized, contextual answers.
 {med_context}
 {missed_dose_hint}
+{memory_context}
 """
 
     if not GROQ_API_KEY or GROQ_API_KEY == "your_api_key_here":
@@ -262,11 +372,11 @@ Guidelines:
     }
 
     try:
-        logger.info(f"💬 Chat LLM call — language: {language}")
+        logger.info(f"Chat LLM call — language: {language}")
         resp = requests.post(GROQ_API_URL, headers=headers, json=payload, timeout=20)
         resp.raise_for_status()
         answer = resp.json()["choices"][0]["message"]["content"].strip()
-        logger.info(f"💬 Chat response: {answer[:100]}...")
+        logger.info(f"Chat response: {answer[:100]}...")
         return answer
     except Exception as e:
         logger.error(f"Chat LLM error: {e}")
