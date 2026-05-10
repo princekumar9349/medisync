@@ -1,0 +1,120 @@
+================================================================================
+                            MEDISYNC
+      Intelligent AI-Powered Medication Adherence & Clinical Platform
+================================================================================
+
+1. PROJECT OVERVIEW & VISION
+--------------------------------------------------------------------------------
+Medisync is a comprehensive, production-grade healthcare platform designed to bridge the gap between doctor prescriptions and patient medication adherence. By leveraging cutting-edge Artificial Intelligence (Google Gemini Vision and Groq Llama-3), Medisync automates the extraction of complex handwritten prescriptions, translates them into actionable daily pillbox schedules, and acts as a 24/7 multilingual virtual health assistant for patients. The system also provides doctors with a dedicated clinical dashboard to monitor patient adherence and respond to critical health alerts in real-time.
+
+2. PROBLEM STATEMENT
+--------------------------------------------------------------------------------
+- Patients often struggle to read handwritten prescriptions, leading to wrong dosages.
+- Medication non-adherence causes chronic health complications and hospital readmissions.
+- Elderly patients find traditional healthcare apps difficult to navigate.
+- Doctors lack visibility into whether patients are actually following their prescribed treatments after leaving the clinic.
+
+3. SYSTEM ARCHITECTURE & TECHNOLOGY STACK
+--------------------------------------------------------------------------------
+Medisync operates on a robust, scalable microservices-inspired monolithic architecture:
+
+[A] Mobile Application (Patient Interface)
+    - Framework: React Native with Expo (SDK 54)
+    - UI/UX: Custom "Clinical Teal" design system, responsive card-based layout.
+    - Features: Push Notifications (expo-notifications), Native Voice API (expo-av, expo-speech).
+    - Role: Primary interface for patients to scan prescriptions, track doses, and voice-chat with AI.
+
+[B] Web Dashboard (Doctor Interface)
+    - Framework: React.js (Vite)
+    - Styling: TailwindCSS (matching mobile aesthetic)
+    - Role: Clinical portal for doctors to view patient history, adherence analytics, and reply to messages.
+
+[C] Backend Infrastructure
+    - Framework: FastAPI (Python 3.12)
+    - Server: Uvicorn, Gunicorn (deployed on Render)
+    - Database: MongoDB (Atlas) - NoSQL for flexible schema management of medical records.
+    - Authentication: JWT (JSON Web Tokens) with Passlib bcrypt hashing.
+    - Task Scheduling: APScheduler for asynchronous background cron jobs (medicine reminders).
+
+[D] Artificial Intelligence Infrastructure
+    - Vision & OCR: Google Gemini 2.5 Flash API (Multimodal processing of prescription images).
+    - Conversational AI & Analytics: Groq Llama-3 (70B) for ultra-fast, contextual patient chatting.
+    - Voice Pipeline: Groq Whisper (Speech-to-Text) + Expo Native TTS.
+    - Fuzzy Matching: TheFuzz / python-Levenshtein for mapping raw OCR text to verified medical dictionaries.
+
+4. CORE FEATURES & MODULES (DEEP DIVE)
+--------------------------------------------------------------------------------
+
+4.1. Intelligent Prescription OCR Pipeline
+    - Users upload a photo of their prescription.
+    - The image is processed directly via Gemini Vision AI.
+    - The AI decodes messy handwriting, abbreviations (BD, TDS, SOS), and extracts normalized medicine names, dosages, durations, and food instructions (e.g., "Take after meal").
+    - Extracts "Patient Memory" (Probable diseases, allergies, doctor's advice).
+
+4.2. Smart Pillbox & Adherence Tracking
+    - Extracted medicines are automatically mapped to a daily timeline (Morning, Afternoon, Night).
+    - Patients tap a button to mark doses as "Taken" or "Skipped".
+    - The system calculates real-time adherence scores (e.g., 85% adherence) and tracks missed doses.
+    - Auto-calculates medicine expiry/depletion dates.
+
+4.3. Multilingual AI Voice Assistant
+    - A built-in ChatGPT-like medical assistant that speaks English and Hindi.
+    - Patients can hold a microphone icon, speak their query ("Mujhe sir dard hai, kya karu?"), and the audio is transcribed via Whisper.
+    - The LLM receives the transcription ALONG WITH the patient's exact medical history and current medicines, providing highly personalized, safe medical advice.
+    - The response is read aloud natively on the phone.
+
+4.4. Doctor-Patient Clinical Bridge
+    - Patients can send direct text messages to their linked doctors.
+    - Doctors log into the Web Dashboard to view an inbox of patient symptoms and queries.
+    - Doctors have a holistic view of the patient's "Adherence Report" and can intervene if critical medicines are frequently missed.
+
+4.5. Automated Notification & Reminder Engine
+    - Integrated APScheduler runs continuously in the background.
+    - Sends local/push notifications via Expo Push Servers precisely when a dose is due.
+    - Capable of triggering Twilio voice calls for critical high-risk medicines if a dose is skipped.
+
+4.6. Continuous Patient Memory (EHR)
+    - The system acts as a mini Electronic Health Record (EHR).
+    - With every scanned prescription, the backend updates the user's chronic conditions, medical history, and risk flags, creating a rich context for the AI and the doctor.
+
+5. UNIQUE TECHNICAL HIGHLIGHTS & SAFETY MEASURES
+--------------------------------------------------------------------------------
+- Deterministic Fallbacks (Anti-Hallucination): Uses Fuzzy String Matching (TheFuzz) against a verified medical dictionary to ensure the AI does not hallucinate fake or dangerous medicines.
+- Multi-Tiered Alerting System: If a patient ignores a standard push notification for a critical medicine, the system automatically escalates to placing a simulated phone call using Twilio and gTTS.
+- True Duplex Voice Processing: Real-time Audio Recording (expo-av) -> API Upload -> Groq Whisper STT -> Groq Llama-3 Contextual Response -> Expo Speech TTS.
+- Dynamic Time-Slot Parsing: The AI interprets complex medical jargon ("1-0-1", "BD", "SOS", "Empty Stomach") and mathematically converts it into timestamped dose slots.
+
+6. WORKING WORKFLOW (USER JOURNEY)
+--------------------------------------------------------------------------------
+[Patient Journey]
+1. Registers via Mobile App -> Uploads prescription photo.
+2. AI automatically builds a daily medicine schedule.
+3. Patient receives a notification at 9:00 AM -> Opens app -> Taps "Mark as Taken".
+4. Patient feels nauseous -> Holds Mic button: "Should I stop taking Azithromycin?"
+5. AI checks history, replies: "Nausea is a common side effect. Please drink water, but do not stop antibiotics. Contact your doctor if it persists."
+
+[Doctor Journey]
+1. Logs into Web Dashboard using secure portal.
+2. Views "Patient Roster" -> Notices Patient X has 40% adherence for diabetes meds.
+3. Sends an in-app message to Patient X advising them on the importance of the medication.
+4. Reviews new prescriptions uploaded by patients to ensure AI parsed them correctly.
+
+7. SECURITY & DATA PRIVACY
+--------------------------------------------------------------------------------
+- Secure JWT-based stateless authentication.
+- Passwords strongly hashed using Bcrypt.
+- Strict prompt engineering on the AI to prevent "hallucinations" of dangerous medicines.
+- "Consult Doctor" fallbacks hardcoded for any critical symptom keywords.
+- CORS policies tightly restricted for production domains.
+
+8. FUTURE SCOPE & SCALABILITY
+--------------------------------------------------------------------------------
+- Hardware Integration: Integration with smart IoT pill dispensers.
+- Wearables: Syncing with Apple Health / Google Fit to correlate heart rate/BP with medication timing.
+- Pharmacy Integration: Auto-ordering medicines when the calculated depletion date approaches.
+- Multi-tenant Clinics: Expanding the doctor dashboard into a full clinic management system for multiple practitioners.
+
+================================================================================
+Document Generated for Medisync Project. 
+Status: Production-Ready (Deployed on Render / Vercel).
+================================================================================

@@ -209,9 +209,7 @@ export default function DoctorDashboard() {
       <aside className="w-full md:w-80 bg-white border-r border-slate-200 flex flex-col h-full shrink-0 shadow-sm z-10">
         <div className="p-4 border-b border-slate-100 bg-white sticky top-0 flex items-center justify-between">
           <div className="flex items-center gap-3">
-             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold text-lg shadow-md shadow-emerald-200">
-               👨‍⚕️
-             </div>
+             <img src="/logo.png" alt="Medisync Logo" className="w-10 h-10 rounded-xl shadow-md shadow-emerald-200 object-cover bg-white" />
              <div>
                <h1 className="font-extrabold text-slate-800 tracking-tight">Medisync Pro</h1>
                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Doctor Panel</p>

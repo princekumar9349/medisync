@@ -14,10 +14,8 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
 // ─── Config ────────────────────────────────────────────────────────────────────
-// Dynamically use the IP of the machine running the Expo bundler
-const debuggerHost = Constants.expoConfig?.hostUri;
-const LOCAL_IP = debuggerHost ? debuggerHost.split(':')[0] : 'localhost';
-export const API_BASE = Platform.OS === 'web' ? 'http://localhost:8000' : `http://${LOCAL_IP}:8000`;
+// Connect to Render Production URL
+export const API_BASE = 'https://medisync-q8qq.onrender.com';
 
 const TOKEN_KEY = 'medisync_token';
 const USER_KEY  = 'medisync_user';
@@ -116,6 +114,20 @@ export async function apiGetMe() {
 
 export async function apiUpdateMe(data) {
   return apiFetch('/me', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function apiUpdateCallingPreferences(data) {
+  return apiFetch('/me/calling-preferences', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function apiUpdateCaregiver(data) {
+  return apiFetch('/me/caregiver', {
     method: 'PUT',
     body: JSON.stringify(data),
   });
@@ -279,6 +291,14 @@ export async function apiGetWeeklyAdherence() {
   return apiFetch('/adherence/weekly');
 }
 
+export async function apiGetMedicineAnalytics(days = 30) {
+  return apiFetch(`/medicine/analytics?days=${days}`);
+}
+
+export async function apiGetSmartReport(days = 30) {
+  return apiFetch(`/medicine/smart-report?days=${days}`);
+}
+
 // ─── Doctor Search & Linking ───────────────────────────────────────────────────
 
 export async function apiSearchAllPatients(q = '', limit = 20) {
@@ -305,6 +325,22 @@ export async function apiGetVoiceReminder(medicine_name, slot = 'morning', langu
   return apiFetch('/voice-reminder', {
     method: 'POST',
     body: JSON.stringify({ medicine_name, slot, language }),
+  });
+}
+
+// ─── Phone & OTP Verification ──────────────────────────────────────────────────
+
+export async function apiSendOtp(phone_number) {
+  return apiFetch('/phone/send-otp', {
+    method: 'POST',
+    body: JSON.stringify({ phone_number }),
+  });
+}
+
+export async function apiVerifyOtp(phone_number, otp_code) {
+  return apiFetch('/phone/verify-otp', {
+    method: 'POST',
+    body: JSON.stringify({ phone_number, otp_code }),
   });
 }
 

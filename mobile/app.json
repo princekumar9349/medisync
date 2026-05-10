@@ -31,7 +31,14 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.VIBRATE",
         "android.permission.RECEIVE_BOOT_COMPLETED",
-        "android.permission.POST_NOTIFICATIONS"
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.USE_EXACT_ALARM",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_HEALTH",
+        "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.WAKE_LOCK"
       ],
       "package": "com.medisync.app"
     },
@@ -50,6 +57,11 @@
           "color": "#0D9488"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "23041707-83ef-4fa1-a303-8a1145b4b4e8"
+      }
+    }
   }
 }

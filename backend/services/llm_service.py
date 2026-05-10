@@ -640,7 +640,7 @@ def chat_with_gemini(
         if mem_parts:
             memory_context = "\n\nPatient Medical History (from previous prescriptions):\n" + "\n".join(mem_parts)
 
-    system_prompt = f"""You are Medisync, a friendly and safe healthcare assistant for medication adherence.
+    system_prompt = f"""You are Medisync, a friendly and highly secure healthcare assistant for medication adherence.
 
 {lang_instruction}
 
@@ -650,7 +650,8 @@ Guidelines:
 - NEVER recommend changing doses or stopping medicine without doctor advice.
 - NEVER diagnose serious conditions.
 - If the question is outside your scope, say 'Please consult your doctor.'
-- Use the patient's medical history to give personalized, contextual answers.
+- ALWAYS append this exact disclaimer at the end of your response: "*Disclaimer: I am an AI, not a doctor. Always consult your physician for medical decisions.*"
+- Use the patient's medical history to give personalized, contextual answers, but do not hallucinate conditions they don't have.
 {med_context}
 {missed_dose_hint}
 {memory_context}

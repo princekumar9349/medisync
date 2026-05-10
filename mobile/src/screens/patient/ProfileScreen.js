@@ -11,6 +11,7 @@ import {
 import * as Speech from 'expo-speech';
 import * as Notifications from 'expo-notifications';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';
 import { COLORS, FONTS, SPACING, RADIUS, S, SHADOW } from '../../theme';
 
@@ -53,6 +54,7 @@ function ActionRow({ icon, label, description, accent, onPress }) {
 
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
+  const navigation = useNavigation();
   const [voiceOn, setVoiceOn] = useState(false);
   const [language, setLanguage] = useState('EN');
 
@@ -101,6 +103,14 @@ export default function ProfileScreen() {
             <ToggleRow icon="volume-high" label="Voice Output" description="Speak scan results aloud" value={voiceOn} onValueChange={v => { setVoiceOn(v); if (v) Speech.speak('Voice enabled', { language: 'en-IN' }); }} />
             <View style={S.divider} />
             <ToggleRow icon="language" label={`Language: ${language === 'EN' ? 'English' : 'हिंदी'}`} description="Change interface language" value={language === 'HI'} onValueChange={v => setLanguage(v ? 'HI' : 'EN')} />
+            <View style={S.divider} />
+            <ActionRow 
+              icon="call-outline" 
+              label="Calling & Caregiver" 
+              description="AI reminders & safety escalation" 
+              accent={COLORS.brand600} 
+              onPress={() => navigation.navigate('CallingSettings')} 
+            />
           </View>
         </View>
 

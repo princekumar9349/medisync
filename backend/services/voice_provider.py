@@ -78,6 +78,80 @@ class TwilioVoiceProvider(VoiceProvider):
             return False
 
 
+class ExotelVoiceProvider(VoiceProvider):
+    """Production provider using Exotel API (India)."""
+    def __init__(self):
+        self.api_key = os.getenv("EXOTEL_API_KEY")
+        self.api_token = os.getenv("EXOTEL_API_TOKEN")
+        self.subdomain = os.getenv("EXOTEL_SUBDOMAIN", "api.exotel.com")
+        self.sid = os.getenv("EXOTEL_SID")
+        self.caller_id = os.getenv("EXOTEL_CALLER_ID")
+        self.app_id = os.getenv("EXOTEL_APP_ID")
+
+    def send_call(self, to_number: str, message: str) -> bool:
+        """
+        Triggers an Exotel Call linking to the predefined App Flow.
+        Currently uses the static Greeting app flow for testing.
+        """
+        if not self.api_key or not self.sid or not self.app_id:
+            logger.error("Exotel credentials (SID, API Key, APP_ID) missing.")
+            return False
+            
+        import requests
+        
+        url = f"https://{self.api_key}:{self.api_token}@{self.subdomain}/v1/Accounts/{self.sid}/Calls/connect.json"
+        
+        # In Exotel, to trigger an app flow:
+        # 'From' is the user to call.
+        # 'Url' is the webhook or internal app url.
+        app_url = f"http://my.exotel.com/{self.sid}/exoml/start_voice/{self.app_id}"
+        
+        data = {
+            "From": to_number,
+            "CallerId": self.caller_id,
+            "Url": app_url
+        }
+        
+        try:
+            response = requests.post(url, data=data)
+            if response.status_code in [200, 201]:
+                logger.info(f"📞 Exotel Call initiated to {to_number}")
+                return True
+            else:
+                logger.error(f"Exotel Call Error: {response.status_code} - {response.text}")
+                return False
+        except Exception as e:
+            logger.error(f"Exotel API Exception: {e}")
+            return False
+
+    def send_sms(self, to_number: str, message: str) -> bool:
+        if not self.api_key or not self.sid:
+            logger.error("Exotel credentials missing.")
+            return False
+            
+        import requests
+        
+        url = f"https://{self.api_key}:{self.api_token}@{self.subdomain}/v1/Accounts/{self.sid}/Sms/send.json"
+        
+        data = {
+            "From": self.caller_id,
+            "To": to_number,
+            "Body": message
+        }
+        
+        try:
+            response = requests.post(url, data=data)
+            if response.status_code in [200, 201]:
+                logger.info(f"💬 Exotel SMS sent to {to_number}")
+                return True
+            else:
+                logger.error(f"Exotel SMS Error: {response.status_code} - {response.text}")
+                return False
+        except Exception as e:
+            logger.error(f"Exotel SMS Exception: {e}")
+            return False
+
+
 # Auto-select provider based on ENV
 def get_voice_provider() -> VoiceProvider:
     if os.getenv("TWILIO_ACCOUNT_SID"):

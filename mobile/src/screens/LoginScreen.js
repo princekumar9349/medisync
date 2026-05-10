@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  View, Text, TextInput, TouchableOpacity, StyleSheet, Image,
   ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator,
   StatusBar, Dimensions,
 } from 'react-native';
@@ -87,8 +87,8 @@ export default function LoginScreen({ navigation }) {
           >
             {/* Header */}
             <View style={styles.headerWrap}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="medical" size={36} color={COLORS.brand600} />
+              <View style={[styles.iconCircle, { overflow: 'hidden' }]}>
+                <Image source={require('../../assets/logo.png')} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
               </View>
               <Text style={styles.welcomeText}>Welcome Back</Text>
               <Text style={styles.subText}>Sign in to your Medisync account</Text>

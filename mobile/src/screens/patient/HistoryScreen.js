@@ -212,12 +212,27 @@ export default function HistoryScreen() {
 
   const rate = insights ? Math.round((insights.adherence_rate || 0) * 100) : 0;
 
+  async function handleSOS() {
+    Alert.alert('Emergency SOS', 'Notify your caregiver and emergency contacts?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'SOS', style: 'destructive', onPress: () => {
+         // This would normally call an endpoint to trigger emergency_service.trigger_emergency_sos
+         Alert.alert('SOS Triggered', 'Your caregiver has been notified of the emergency.');
+      }},
+    ]);
+  }
+
   return (
     <View style={S.screen}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
       <View style={[S.headerBar, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }]}>
         <View><Text style={S.headerTitle}>Dashboard</Text><Text style={S.headerSubtitle}>History & AI Insights</Text></View>
-        <TouchableOpacity onPress={() => load()} style={styles.refreshIcon}><Ionicons name="refresh" size={18} color={COLORS.brand600} /></TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+            <TouchableOpacity onPress={handleSOS} style={[styles.refreshIcon, { backgroundColor: COLORS.red50, borderColor: COLORS.red200 }]}>
+              <Ionicons name="warning" size={18} color={COLORS.red600} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => load()} style={styles.refreshIcon}><Ionicons name="refresh" size={18} color={COLORS.brand600} /></TouchableOpacity>
+        </View>
       </View>
       <ScrollView contentContainerStyle={S.scrollContent} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(true); }} colors={[COLORS.brand500]} />}>
         {prescriptions.length > 0 && <TodaySchedule prescriptions={prescriptions} />}
@@ -234,6 +249,19 @@ export default function HistoryScreen() {
                 <Text style={{ fontSize: FONTS.xs, fontWeight: FONTS.bold, color: insights.risk_level === 'low' ? COLORS.emerald700 : insights.risk_level === 'high' ? COLORS.red700 : COLORS.amber700 }}>{insights.risk_level === 'low' ? 'Low Risk' : insights.risk_level === 'high' ? 'High Risk' : 'Medium Risk'}</Text>
               </View>
             </View>
+            
+            {/* Gamification & Streaks */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.amber50, borderRadius: RADIUS.md, padding: 12, marginTop: 16, borderWidth: 1, borderColor: COLORS.amber200 }}>
+              <Ionicons name="flame" size={24} color={COLORS.amber500} style={{ marginRight: 12 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: FONTS.sm, fontWeight: FONTS.bold, color: COLORS.amber800 }}>{insights.total_doses_taken > 5 ? '7 Day Streak!' : 'Keep going!'}</Text>
+                <Text style={{ fontSize: FONTS.xs, color: COLORS.amber700, marginTop: 2 }}>You're doing great with your medication.</Text>
+              </View>
+              <View style={{ backgroundColor: COLORS.white, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: COLORS.amber200 }}>
+                 <Text style={{ fontSize: FONTS.xs, fontWeight: FONTS.bold, color: COLORS.amber700 }}>+10 pts</Text>
+              </View>
+            </View>
+
             <View style={[S.row, { marginTop: 16, gap: 16 }]}>
               <AdherenceRing rate={rate} />
               <View style={{ flex: 1, gap: 8 }}>

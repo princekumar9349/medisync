@@ -61,9 +61,7 @@ export default function RegisterPage({ onSwitch }) {
       <div className="auth-card animate-fade-in">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-xl shadow-brand-200 mb-4">
-            <span className="text-3xl">⚕️</span>
-          </div>
+          <img src="/logo.png" alt="Medisync Logo" className="w-16 h-16 rounded-2xl shadow-xl shadow-brand-200 mb-4 object-cover bg-white" />
           <h1 className="text-2xl font-extrabold text-slate-800 tracking-tight">Create account</h1>
           <p className="text-slate-400 text-sm mt-1">Start managing your medications smartly</p>
         </div>

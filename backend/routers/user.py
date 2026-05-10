@@ -78,6 +78,12 @@ def get_profile(current_user: TokenData = Depends(get_current_user)):
         "gender": user.get("gender"),
         "weight": user.get("weight"),
         "blood_group": user.get("blood_group"),
+        "phone": user.get("phone"),
+        "phone_verified": user.get("phone_verified", False),
+        "caregiver_name": user.get("caregiver_name"),
+        "caregiver_phone": user.get("caregiver_phone"),
+        "caregiver_relation": user.get("caregiver_relation"),
+        "calling_preferences": user.get("calling_preferences", {}),
         "created_at": user.get("created_at"),
     }
 
@@ -110,6 +116,69 @@ def update_profile(payload: UserUpdate, current_user: TokenData = Depends(get_cu
     )
 
     return {"message": "Profile updated successfully"}
+
+
+@router.put(
+    "/me/calling-preferences",
+    summary="Update current user's calling preferences",
+)
+def update_calling_preferences(
+    payload: dict, # Using dict to allow partial updates of calling_preferences
+    current_user: TokenData = Depends(get_current_user)
+):
+    users_col = database.get_users()
+    if users_col is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+
+    # Flatten the dict for MongoDB $set: e.g., {"calling_preferences.enable_auto_calling": True}
+    update_data = {}
+    for key, value in payload.items():
+        update_data[f"calling_preferences.{key}"] = value
+
+    if not update_data:
+        return {"message": "No data to update."}
+        
+    update_data["updated_at"] = datetime.utcnow()
+
+    users_col.update_one(
+        {"_id": ObjectId(current_user.user_id)},
+        {"$set": update_data}
+    )
+
+    return {"message": "Calling preferences updated."}
+
+
+@router.put(
+    "/me/caregiver",
+    summary="Update current user's caregiver details",
+)
+def update_caregiver(
+    payload: dict,
+    current_user: TokenData = Depends(get_current_user)
+):
+    users_col = database.get_users()
+    if users_col is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+
+    update_data = {
+        "caregiver_name": payload.get("caregiver_name"),
+        "caregiver_phone": payload.get("caregiver_phone"),
+        "caregiver_relation": payload.get("caregiver_relation"),
+        "updated_at": datetime.utcnow()
+    }
+    
+    # Remove empty values
+    update_data = {k: v for k, v in update_data.items() if v is not None}
+
+    if not update_data:
+        return {"message": "No data to update."}
+
+    users_col.update_one(
+        {"_id": ObjectId(current_user.user_id)},
+        {"$set": update_data}
+    )
+
+    return {"message": "Caregiver details updated."}
 
 
 # ─── GET /user-prescriptions ──────────────────────────────────────────────────

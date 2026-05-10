@@ -10,6 +10,42 @@ from typing import List, Optional, Literal
 from pydantic import BaseModel, Field, EmailStr
 
 
+# ─── Calling & Caregiver Preferences ──────────────────────────────────────────
+
+class CallingPreferences(BaseModel):
+    enable_auto_calling: bool = False
+    language: Literal["en", "hi"] = "en"
+    voice_type: Literal["male", "female"] = "female"
+    critical_only: bool = False
+    quiet_hours_start: str = "22:00"  # HH:MM 24-hour format
+    quiet_hours_end: str = "06:00"    # HH:MM 24-hour format
+    caregiver_escalation: bool = True
+
+class CallingPreferencesUpdate(BaseModel):
+    enable_auto_calling: Optional[bool] = None
+    language: Optional[Literal["en", "hi"]] = None
+    voice_type: Optional[Literal["male", "female"]] = None
+    critical_only: Optional[bool] = None
+    quiet_hours_start: Optional[str] = None
+    quiet_hours_end: Optional[str] = None
+    caregiver_escalation: Optional[bool] = None
+
+class CaregiverUpdate(BaseModel):
+    caregiver_name: str = Field(..., min_length=2, max_length=100)
+    caregiver_phone: str = Field(..., min_length=10, max_length=15)
+    caregiver_relation: str = Field(..., min_length=2, max_length=50)
+
+
+# ─── Auth & OTP ───────────────────────────────────────────────────────────────
+
+class OTPRequest(BaseModel):
+    phone_number: str = Field(..., min_length=10, max_length=15)
+
+class OTPVerify(BaseModel):
+    phone_number: str = Field(..., min_length=10, max_length=15)
+    otp_code: str = Field(..., min_length=6, max_length=6)
+
+
 # ─── Auth ─────────────────────────────────────────────────────────────────────
 
 class UserCreate(BaseModel):
@@ -38,6 +74,23 @@ class UserProfile(BaseModel):
     name: str
     email: str
     role: str = "patient"
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    weight: Optional[float] = None
+    blood_group: Optional[str] = None
+    # Phone Verification
+    phone: Optional[str] = None
+    phone_verified: bool = False
+    # Gamification & Streaks
+    current_streak: int = 0
+    longest_streak: int = 0
+    achievements: List[str] = Field(default_factory=list)
+    # Caregiver System
+    caregiver_name: Optional[str] = None
+    caregiver_phone: Optional[str] = None
+    caregiver_relation: Optional[str] = None
+    # Calling Settings
+    calling_preferences: CallingPreferences = Field(default_factory=CallingPreferences)
     created_at: datetime
 
 
@@ -47,6 +100,9 @@ class UserUpdate(BaseModel):
     gender: Optional[str] = None
     weight: Optional[float] = None
     blood_group: Optional[str] = None
+    caregiver_name: Optional[str] = None
+    caregiver_phone: Optional[str] = None
+    caregiver_relation: Optional[str] = None
 
 
 class Token(BaseModel):

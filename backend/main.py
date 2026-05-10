@@ -37,7 +37,7 @@ from db import database
 from services.scheduler import start_scheduler, stop_scheduler
 
 # Routers 
-from routers import auth, scan, tracking, user, chat, voice, doctor, voice_chat
+from routers import auth, scan, tracking, user, chat, voice, doctor, voice_chat, phone
 
 # Logging Setup 
 logging.basicConfig(
@@ -109,6 +109,7 @@ app.include_router(chat.router)       # /chat
 app.include_router(doctor.router)     # /doctor/message, /doctor/messages
 app.include_router(voice.router)      # /voice-reminder, /notify
 app.include_router(voice_chat.router) # /voice-chat/stream
+app.include_router(phone.router)      # /phone/send-otp, /phone/verify-otp
 
 
 # Health Check 

@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  View, Text, TextInput, TouchableOpacity, StyleSheet, Image,
   ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator,
   StatusBar, Dimensions,
 } from 'react-native';
@@ -90,8 +90,8 @@ export default function RegisterScreen({ navigation }) {
           >
             {/* Header */}
             <View style={styles.headerWrap}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="person-add" size={36} color={COLORS.brand600} />
+              <View style={[styles.iconCircle, { overflow: 'hidden' }]}>
+                <Image source={require('../../assets/logo.png')} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
               </View>
               <Text style={styles.welcomeText}>Create Account</Text>
               <Text style={styles.subText}>Join Medisync today</Text>

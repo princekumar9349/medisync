@@ -69,10 +69,7 @@ export default function LoginPage({ onSwitch }) {
 
         {/* Logo */}
         <div className="flex flex-col items-center mb-6">
-          <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${accentFrom} ${accentTo}
-                           flex items-center justify-center shadow-xl mb-4 transition-all duration-300`}>
-            <span className="text-3xl">{isDoctor ? '👨‍⚕️' : '⚕️'}</span>
-          </div>
+          <img src="/logo.png" alt="Medisync Logo" className="w-16 h-16 rounded-2xl shadow-xl mb-4 transition-all duration-300 object-cover bg-white" />
           <h1 className="text-2xl font-extrabold text-slate-800 tracking-tight">
             Welcome back
           </h1>

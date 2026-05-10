@@ -223,6 +223,7 @@ from services.prescription_intelligence import (
     merge_patient_memory,
     save_scan_intelligence,
 )
+from services.ai_adherence import check_drug_interactions
 
 
 @router.post(
@@ -277,6 +278,11 @@ async def analyze_prescription(
         llm_tests = gemini_result.get("tests_recommended", []) or []
         llm_notes = gemini_result.get("doctor_notes", []) or []
         llm_memory = gemini_result.get("patient_memory", {})
+        
+        # Check for drug interactions among the detected medicines
+        drug_interactions_warning = await check_drug_interactions(llm_meds)
+        if "No known" not in drug_interactions_warning and "Unable to verify" not in drug_interactions_warning:
+            llm_summary.setdefault("risk_flags", []).append(drug_interactions_warning)
 
         medicine_details = [
             PrescriptionMedicineDetail(**m) for m in llm_meds

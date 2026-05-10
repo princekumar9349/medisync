@@ -55,10 +55,7 @@ function AppShell() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-brand-50 to-slate-100 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700
-                          flex items-center justify-center shadow-xl animate-pulse">
-            <span className="text-2xl">⚕️</span>
-          </div>
+          <img src="/logo.png" alt="Medisync Logo" className="w-14 h-14 rounded-2xl shadow-xl animate-pulse object-cover bg-white" />
           <div className="flex gap-1.5">
             {[0, 1, 2].map(i => (
               <span key={i} className="w-2 h-2 rounded-full bg-brand-400 animate-bounce"
@@ -151,10 +148,7 @@ function MainApp() {
       {/* ── Top App Bar ──────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-white/60 shadow-sm">
         <div className="flex items-center gap-3 px-4 py-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-600 to-brand-800
-                          flex items-center justify-center shadow-md shadow-brand-200">
-            <span className="text-lg">⚕️</span>
-          </div>
+          <img src="/logo.png" alt="Medisync Logo" className="w-9 h-9 rounded-xl shadow-md shadow-brand-200 object-cover bg-white" />
           <div className="flex-1">
             <h1 className="font-extrabold text-brand-700 text-lg leading-none tracking-tight">Medisync</h1>
             <p className="text-slate-400 text-[11px] font-medium tracking-wide">Smart Medication Assistant</p>

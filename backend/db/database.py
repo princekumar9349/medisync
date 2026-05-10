@@ -142,6 +142,13 @@ def get_scan_intelligence() -> Collection | None:
     """Stores full /scan/analyze results (raw OCR + structured JSON) for auditability."""
     return _db["scan_intelligence"] if _db is not None else None
 
+def get_otps() -> Collection | None:
+    """Stores temporary OTPs for phone verification."""
+    return _db["otps"] if _db is not None else None
+
+def get_call_logs() -> Collection | None:
+    """Stores logs of AI calls and Caregiver escalations."""
+    return _db["call_logs"] if _db is not None else None
 
 def ping() -> bool:
     """Live health check — used by /health-check endpoint."""

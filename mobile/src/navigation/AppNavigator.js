@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { View, ActivityIndicator, StyleSheet, TouchableOpacity, Platform, Text } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, TouchableOpacity, Platform, Text, Image } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -26,6 +26,7 @@ import HistoryScreen from '../screens/patient/HistoryScreen';
 import ProfileScreen from '../screens/patient/ProfileScreen';
 import OnboardingScreen from '../screens/patient/OnboardingScreen';
 import SymptomReportScreen from '../screens/patient/SymptomReportScreen';
+import CallingSettingsScreen from '../screens/patient/CallingSettingsScreen';
 
 // Doctor screens
 import DoctorInboxScreen    from '../screens/doctor/DoctorInboxScreen';
@@ -178,8 +179,8 @@ function DoctorTabs() {
 function LoadingScreen() {
   return (
     <View style={styles.loader}>
-      <View style={styles.loaderIcon}>
-        <Ionicons name="medical" size={28} color={COLORS.white} />
+      <View style={[styles.loaderIcon, { overflow: 'hidden' }]}>
+        <Image source={require('../../assets/logo.png')} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
       </View>
       <ActivityIndicator size="large" color={COLORS.brand500} style={{ marginTop: 20 }} />
       <Text style={styles.loaderText}>Loading Medisync…</Text>
@@ -194,6 +195,7 @@ function PatientStackNav() {
       <Stack.Screen name="PatientTabs" component={PatientTabs} />
       <Stack.Screen name="Results" component={ResultsScreen} />
       <Stack.Screen name="SymptomReport" component={SymptomReportScreen} />
+      <Stack.Screen name="CallingSettings" component={CallingSettingsScreen} />
     </Stack.Navigator>
   );
 }
