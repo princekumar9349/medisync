@@ -94,7 +94,7 @@
     @apply bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200;
   }
   .pillbox-slot-afternoon {
-    @apply bg-gradient-to-br from-sky-50 to-blue-50 border-sky-200;
+    @apply bg-gradient-to-br from-teal-50 to-emerald-50 border-teal-200;
   }
   .pillbox-slot-night {
     @apply bg-gradient-to-br from-indigo-50 to-purple-50 border-indigo-200;

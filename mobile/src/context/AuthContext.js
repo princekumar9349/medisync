@@ -68,7 +68,7 @@ export function AuthProvider({ children }) {
           name: 'Medication Reminders',
           importance: Notifications.AndroidImportance.HIGH,
           vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#3B82F6',
+          lightColor: '#0D9488',
         });
       }
 

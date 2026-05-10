@@ -1,6 +1,6 @@
 /**
  * screens/doctor/DoctorPatientDetailScreen.js
- * Business Theme Overhaul
+ * Clean Medical Theme — Teal/White
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -119,28 +119,28 @@ export default function DoctorPatientDetailScreen() {
   if (loading || !profile) {
     return (
       <View style={[S.screen, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={COLORS.white} />
-        <Text style={{ color: COLORS.brand100, marginTop: 12 }}>Loading patient profile…</Text>
+        <ActivityIndicator size="large" color={COLORS.brand500} />
+        <Text style={{ color: COLORS.slate400, marginTop: 12 }}>Loading patient profile…</Text>
       </View>
     );
   }
 
   return (
     <View style={S.screen}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.brand600} />
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
 
       {/* ── Header ──────────────────────────────────────────────── */}
-      <View style={[S.headerBackground, { paddingBottom: 60, flexDirection: 'row', alignItems: 'flex-start' }]}>
+      <View style={[S.headerBar, { flexDirection: 'row', alignItems: 'flex-start' }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color={COLORS.white} />
+          <Ionicons name="arrow-back" size={22} color={COLORS.slate700} />
         </TouchableOpacity>
-        <View style={{ flex: 1, marginLeft: 16 }}>
+        <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={S.headerTitle}>{profile.name}</Text>
           <Text style={S.headerSubtitle}>ID: {profile.patient_id} · Age {profile.age} · {profile.condition}</Text>
         </View>
       </View>
 
-      <View style={[S.overlapContainer, { marginTop: -40 }]}>
+      <View style={{ flex: 1 }}>
         {/* ── Toggle Tabs ─────────────────────────────────────────── */}
         <View style={styles.tabContainer}>
           <TouchableOpacity 
@@ -318,17 +318,17 @@ export default function DoctorPatientDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  backBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'flex-start', marginTop: 4 },
+  backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.slate50, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: COLORS.border },
 
-  tabContainer: { flexDirection: 'row', backgroundColor: COLORS.white, borderRadius: RADIUS.lg, marginHorizontal: SPACING.lg, marginTop: SPACING.md, padding: 4, ...SHADOW.sm },
+  tabContainer: { flexDirection: 'row', backgroundColor: COLORS.white, borderRadius: RADIUS.sm, marginHorizontal: SPACING.lg, marginTop: SPACING.md, padding: 3, borderWidth: 1, borderColor: COLORS.border },
   tabBtn: { flex: 1, flexDirection: 'row', paddingVertical: 12, alignItems: 'center', justifyContent: 'center', borderRadius: RADIUS.md },
-  tabBtnActive: { backgroundColor: COLORS.brand50 },
+  tabBtnActive: { backgroundColor: COLORS.brand50, borderRadius: RADIUS.sm },
   tabText: { fontSize: FONTS.sm, fontWeight: FONTS.bold, color: COLORS.slate500 },
   tabTextActive: { color: COLORS.brand600 },
 
   content: { flex: 1, padding: SPACING.lg },
 
-  card: { backgroundColor: COLORS.white, padding: SPACING.lg, borderRadius: RADIUS.xl, marginBottom: SPACING.md, ...SHADOW.sm },
+  card: { backgroundColor: COLORS.white, padding: SPACING.lg, borderRadius: RADIUS.lg, marginBottom: SPACING.md, borderWidth: 1, borderColor: COLORS.border },
   sectionTitle: { fontSize: FONTS.xs, fontWeight: FONTS.bold, color: COLORS.slate500, textTransform: 'uppercase', marginBottom: 12, letterSpacing: 0.5 },
 
   badge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: RADIUS.full, borderWidth: 1 },
@@ -381,11 +381,11 @@ const styles = StyleSheet.create({
   msgRow: { flexDirection: 'row', marginBottom: 12 },
   msgBubble: { maxWidth: '80%', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 20 },
   msgDoc: { backgroundColor: COLORS.brand600, borderBottomRightRadius: 4 },
-  msgUser: { backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.slate200, borderBottomLeftRadius: 4, ...SHADOW.sm },
+  msgUser: { backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border, borderBottomLeftRadius: 4 },
   msgSys: { backgroundColor: COLORS.amber100, borderWidth: 1, borderColor: COLORS.amber200, paddingVertical: 6 },
   msgText: { fontSize: FONTS.sm, lineHeight: 20 },
 
-  inputContainer: { flexDirection: 'row', padding: SPACING.lg, paddingBottom: Platform.OS === 'ios' ? 30 : SPACING.lg, backgroundColor: COLORS.white, borderTopWidth: 1, borderColor: COLORS.slate100, alignItems: 'flex-end', ...SHADOW.lg },
-  input: { flex: 1, backgroundColor: COLORS.slate50, borderWidth: 1, borderColor: COLORS.slate200, borderRadius: 24, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12, maxHeight: 100, fontSize: FONTS.base },
+  inputContainer: { flexDirection: 'row', padding: SPACING.lg, paddingBottom: Platform.OS === 'ios' ? 30 : SPACING.lg, backgroundColor: COLORS.white, borderTopWidth: 1, borderColor: COLORS.border, alignItems: 'flex-end' },
+  input: { flex: 1, backgroundColor: COLORS.slate50, borderWidth: 1, borderColor: COLORS.border, borderRadius: 22, paddingHorizontal: 18, paddingTop: 10, paddingBottom: 10, maxHeight: 100, fontSize: FONTS.base, color: COLORS.slate800 },
   sendBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: COLORS.brand600, alignItems: 'center', justifyContent: 'center', marginLeft: 10 },
 });

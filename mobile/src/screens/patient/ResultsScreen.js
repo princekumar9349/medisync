@@ -1,6 +1,6 @@
 /**
  * screens/patient/ResultsScreen.js — Scan Results Display
- * Business Theme Overhaul
+ * Clean Medical Theme — Teal/White
  */
 
 import React, { useState } from 'react';
@@ -74,15 +74,13 @@ export default function ResultsScreen({ route, navigation }) {
 
   if (!result) return (
     <View style={S.screen}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.brand600} />
-      <View style={S.headerBackground}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
+      <View style={S.headerBar}>
         <Text style={S.headerTitle}>Results</Text>
         <Text style={S.headerSubtitle}>Scan history & outputs</Text>
       </View>
-      <View style={S.overlapContainer}>
-        <View style={{ flex: 1, justifyContent: 'center', padding: SPACING.xl }}>
-          <EmptyState navigation={navigation} />
-        </View>
+      <View style={{ flex: 1, justifyContent: 'center', padding: SPACING.xl }}>
+        <EmptyState navigation={navigation} />
       </View>
     </View>
   );
@@ -94,21 +92,20 @@ export default function ResultsScreen({ route, navigation }) {
 
   return (
     <View style={S.screen}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.brand600} />
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
 
-      <View style={[S.headerBackground, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }]}>
+      <View style={[S.headerBar, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }]}>
         <View>
           <Text style={S.headerTitle}>Scan Results</Text>
           <Text style={S.headerSubtitle}>Analysis complete</Text>
         </View>
         <View style={styles.successBadge}>
-          <Ionicons name="checkmark-circle" size={16} color={COLORS.emerald100} style={{ marginRight: 4 }} />
+          <Ionicons name="checkmark-circle" size={16} color={COLORS.emerald600} style={{ marginRight: 4 }} />
           <Text style={styles.successText}>Success</Text>
         </View>
       </View>
 
-      <View style={S.overlapContainer}>
-        <ScrollView contentContainerStyle={S.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={S.scrollContent} showsVerticalScrollIndicator={false}>
 
           {/* OCR Confidence Score */}
           {result.confidence_score > 0 && (
@@ -182,16 +179,15 @@ export default function ResultsScreen({ route, navigation }) {
           </TouchableOpacity>
 
         </ScrollView>
-      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  successBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: RADIUS.full, paddingHorizontal: 12, paddingVertical: 6 },
-  successText: { fontSize: FONTS.xs, fontWeight: FONTS.bold, color: COLORS.white },
+  successBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.emerald50, borderRadius: RADIUS.full, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: COLORS.emerald200 },
+  successText: { fontSize: FONTS.xs, fontWeight: FONTS.bold, color: COLORS.emerald700 },
 
-  condCard: { backgroundColor: COLORS.brand600, borderRadius: RADIUS.xl, padding: SPACING.xl, marginBottom: SPACING.lg, ...SHADOW.sm },
+  condCard: { backgroundColor: COLORS.brand600, borderRadius: RADIUS.lg, padding: SPACING.xl, marginBottom: SPACING.lg },
   condLabel: { fontSize: FONTS.xs, fontWeight: FONTS.bold, color: COLORS.brand200, textTransform: 'uppercase', letterSpacing: 1 },
   condValue: { fontSize: FONTS.xl, fontWeight: FONTS.bold, color: COLORS.white, marginTop: 8 },
 
@@ -201,7 +197,7 @@ const styles = StyleSheet.create({
   safetyDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.amber500, marginTop: 6, marginRight: 8 },
   safetyItem:  { fontSize: FONTS.sm, color: COLORS.amber800, lineHeight: 20, flex: 1 },
 
-  medCard: { backgroundColor: COLORS.white, borderRadius: RADIUS.xl, padding: SPACING.lg, marginBottom: SPACING.md, ...SHADOW.sm },
+  medCard: { backgroundColor: COLORS.white, borderRadius: RADIUS.lg, padding: SPACING.lg, marginBottom: SPACING.md, borderWidth: 1, borderColor: COLORS.border },
   medIconWrap: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.brand50, alignItems: 'center', justifyContent: 'center' },
   medName:    { fontSize: FONTS.lg, fontWeight: FONTS.bold, color: COLORS.slate800, textTransform: 'capitalize' },
   dosageBadge: { alignSelf: 'flex-start', backgroundColor: COLORS.brand50, borderRadius: RADIUS.full, paddingHorizontal: 10, paddingVertical: 4, marginTop: 6, borderWidth: 1, borderColor: COLORS.brand100 },
@@ -213,7 +209,7 @@ const styles = StyleSheet.create({
   confBadge: { backgroundColor: COLORS.emerald50, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: COLORS.emerald200 },
   confText: { fontSize: 9, fontWeight: 'bold', color: COLORS.emerald700 },
 
-  noMeds: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white, borderRadius: RADIUS.xl, padding: SPACING.xl, marginBottom: SPACING.lg, ...SHADOW.sm },
+  noMeds: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white, borderRadius: RADIUS.lg, padding: SPACING.xl, marginBottom: SPACING.lg, borderWidth: 1, borderColor: COLORS.border },
 
   adviceCard: { backgroundColor: COLORS.brand50, borderWidth: 1, borderColor: COLORS.brand200, borderRadius: RADIUS.xl, padding: SPACING.lg, marginTop: SPACING.md, marginBottom: SPACING.lg },
   adviceTitle: { fontSize: FONTS.base, fontWeight: FONTS.bold, color: COLORS.brand700 },

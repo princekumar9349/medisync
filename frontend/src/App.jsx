@@ -145,7 +145,7 @@ function MainApp() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-slate-100
+    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-teal-50 to-slate-100
                     flex flex-col max-w-lg mx-auto">
 
       {/* ── Top App Bar ──────────────────────────────────────────────────── */}
