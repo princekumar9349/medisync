@@ -4,7 +4,7 @@ Handles Smart AI Missed Dose Logic and Adherence optimization.
 """
 from datetime import datetime
 import logging
-from .llm_service import call_llm
+from .llm_service import call_groq
 from .emergency import emergency_service
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,8 @@ async def analyze_missed_dose(patient_profile: dict, medicine_name: str, delay_m
     """
     
     try:
-        response = call_llm(prompt)
+        result = call_groq(prompt, user_text="", expect_json=False)
+        response = result if isinstance(result, str) else result.get("text", "")
     except Exception as e:
         logger.error(f"Failed to generate AI missed dose advice: {e}")
         response = f"You missed your dose of {medicine_name}. Please check your prescription instructions."
@@ -61,7 +62,8 @@ async def generate_smart_schedule(adherence_logs: list, medicines: list) -> str:
     Example: "You usually take your morning medicine late. Should we move your reminder to 9:30 AM?"
     """
     try:
-        return call_llm(prompt)
+        result = call_groq(prompt, user_text="", expect_json=False)
+        return result if isinstance(result, str) else result.get("text", "")
     except Exception:
         return "Your adherence looks good!"
 
@@ -83,7 +85,8 @@ async def check_drug_interactions(medicines: list) -> str:
     ALWAYS append this disclaimer at the end: "*Disclaimer: Always consult your doctor before making changes to your medication.*"
     """
     try:
-        return call_llm(prompt)
+        result = call_groq(prompt, user_text="", expect_json=False)
+        return result if isinstance(result, str) else result.get("text", "")
     except Exception as e:
         logger.error(f"Failed to check drug interactions: {e}")
         return "Unable to verify interactions at this time. *Disclaimer: Always consult your doctor.*"
