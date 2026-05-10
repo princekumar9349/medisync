@@ -2,6 +2,9 @@ fastapi==0.104.1
 uvicorn==0.24.0
 pymongo==4.6.2
 pydantic==2.5.3
+=======
+pydantic==1.10.13
+>>>>>>> 87b9c57 (final railway fix)
 python-dotenv==1.0.1
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
@@ -12,5 +15,10 @@ gtts==2.5.1
 httpx==0.25.2
 requests==2.31.0
 twilio==9.0.4
+<<<<<<< HEAD
 python-multipart==0.0.9
 email-validator
+=======
+python-multipart==0.0.6
+email-validator
+>>>>>>> 87b9c57 (final railway fix)
