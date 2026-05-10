@@ -151,7 +151,7 @@ export default function DoctorSearchScreen({ navigation }) {
 const styles = StyleSheet.create({
   container:   { flex: 1, backgroundColor: COLORS.bgLight },
   header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: SPACING.xl, paddingVertical: SPACING.lg },
-  backBtn:     { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center', ...SHADOW.sm },
+  backBtn:     { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
   headerTitle: { fontSize: FONTS.xl, fontWeight: FONTS.bold, color: COLORS.slate800 },
 
   searchBar: {
@@ -159,7 +159,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white, borderRadius: RADIUS.lg,
     marginHorizontal: SPACING.xl, paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm, marginBottom: SPACING.lg,
-    ...SHADOW.sm,
+    borderWidth: 1, borderColor: COLORS.border,
   },
   searchInput: { flex: 1, fontSize: FONTS.base, color: COLORS.slate800 },
 
@@ -169,7 +169,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: COLORS.white, borderRadius: RADIUS.lg,
     padding: SPACING.md, marginBottom: SPACING.sm,
-    ...SHADOW.sm,
+    borderWidth: 1, borderColor: COLORS.border,
   },
   avatarCircle: {
     width: 46, height: 46, borderRadius: 23,

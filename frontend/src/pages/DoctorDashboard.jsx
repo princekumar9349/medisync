@@ -198,7 +198,7 @@ export default function DoctorDashboard() {
 
   const STATUS_STYLES = {
     active: 'bg-emerald-100 text-emerald-700',
-    stable: 'bg-blue-100 text-blue-700',
+    stable: 'bg-teal-100 text-teal-700',
     critical: 'bg-red-100 text-red-700 animate-pulse'
   }
 
@@ -420,13 +420,13 @@ export default function DoctorDashboard() {
                 {/* Medicines */}
                 <section>
                   <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                    <span className="text-blue-500">💊</span> Active Prescriptions
+                    <span className="text-teal-500">💊</span> Active Prescriptions
                   </h3>
                   <div className="space-y-2">
                     {profile.medicines.length === 0 ? <p className="text-sm text-slate-400">No active medicines.</p> : null}
                     {profile.medicines.map((m, i) => (
                       <div key={i} className="p-3 bg-white border border-slate-200 rounded-xl shadow-sm flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center font-bold">℞</div>
+                        <div className="w-8 h-8 rounded-full bg-teal-50 text-teal-600 flex items-center justify-center font-bold">℞</div>
                         <div>
                           <p className="text-sm font-bold text-slate-800 leading-tight">{m.name}</p>
                           <p className="text-[10px] font-bold text-slate-500">{m.dosage} · {m.timing}</p>

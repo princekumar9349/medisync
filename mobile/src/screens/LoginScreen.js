@@ -1,5 +1,6 @@
 /**
  * screens/LoginScreen.js — Role-aware Login for Medisync Mobile
+ * Clean Medical Theme — Teal/White
  */
 
 import React, { useState } from 'react';
@@ -33,9 +34,8 @@ export default function LoginScreen({ navigation }) {
   const [error,    setError]    = useState(null);
   const [remember, setRemember] = useState(false);
 
-  const isDoctor = selectedRole === 'doctor';
-  const accent   = isDoctor ? COLORS.emerald600 : COLORS.brand600;
-  const accentLight = isDoctor ? COLORS.emerald400 : COLORS.brand400;
+  const accent = COLORS.brand600;
+  const accentLight = COLORS.brand400;
 
   async function handleLogin() {
     if (!email.trim() || !password) {
@@ -57,15 +57,15 @@ export default function LoginScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={accent} />
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.brand700} />
       
-      {/* Dynamic Wavy Background */}
+      {/* Teal Curved Background */}
       <View style={StyleSheet.absoluteFillObject}>
-        <Svg height={height * 0.45} width={width} viewBox="0 0 1440 320" preserveAspectRatio="none">
+        <Svg height={height * 0.42} width={width} viewBox="0 0 1440 320" preserveAspectRatio="none">
           <Defs>
             <LinearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
-              <Stop offset="0" stopColor={accentLight} stopOpacity="1" />
-              <Stop offset="1" stopColor={accent} stopOpacity="1" />
+              <Stop offset="0" stopColor={COLORS.brand500} stopOpacity="1" />
+              <Stop offset="1" stopColor={COLORS.brand700} stopOpacity="1" />
             </LinearGradient>
           </Defs>
           <Path 
@@ -85,13 +85,13 @@ export default function LoginScreen({ navigation }) {
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            {/* Header Text */}
+            {/* Header */}
             <View style={styles.headerWrap}>
               <View style={styles.iconCircle}>
-                <Ionicons name="medical" size={40} color={accent} />
+                <Ionicons name="medical" size={36} color={COLORS.brand600} />
               </View>
               <Text style={styles.welcomeText}>Welcome Back</Text>
-              <Text style={styles.subText}>Sign in to continue</Text>
+              <Text style={styles.subText}>Sign in to your Medisync account</Text>
             </View>
 
             <View style={styles.card}>
@@ -102,11 +102,11 @@ export default function LoginScreen({ navigation }) {
                   return (
                     <TouchableOpacity
                       key={role.id}
-                      style={[styles.roleBtn, isActive && { backgroundColor: accent }]}
+                      style={[styles.roleBtn, isActive && { backgroundColor: COLORS.brand600 }]}
                       onPress={() => { setSelectedRole(role.id); setError(null); }}
                       activeOpacity={0.8}
                     >
-                      <Ionicons name={role.icon} size={18} color={isActive ? COLORS.white : COLORS.slate500} style={{ marginRight: 6 }} />
+                      <Ionicons name={role.icon} size={16} color={isActive ? COLORS.white : COLORS.slate500} style={{ marginRight: 6 }} />
                       <Text style={[styles.roleLabel, { color: isActive ? COLORS.white : COLORS.slate500 }]}>
                         {role.label}
                       </Text>
@@ -118,14 +118,14 @@ export default function LoginScreen({ navigation }) {
               {/* Error */}
               {error && (
                 <View style={styles.errorBox}>
-                  <Ionicons name="alert-circle" size={20} color={COLORS.red600} />
+                  <Ionicons name="alert-circle" size={18} color={COLORS.red600} />
                   <Text style={styles.errorText}>{error}</Text>
                 </View>
               )}
 
               {/* Email */}
               <View style={styles.inputContainer}>
-                <Ionicons name="mail-outline" size={20} color={COLORS.slate400} style={styles.inputIcon} />
+                <Ionicons name="mail-outline" size={18} color={COLORS.slate400} style={styles.inputIcon} />
                 <TextInput
                   style={styles.textInput}
                   value={email}
@@ -140,7 +140,7 @@ export default function LoginScreen({ navigation }) {
 
               {/* Password */}
               <View style={styles.inputContainer}>
-                <Ionicons name="lock-closed-outline" size={20} color={COLORS.slate400} style={styles.inputIcon} />
+                <Ionicons name="lock-closed-outline" size={18} color={COLORS.slate400} style={styles.inputIcon} />
                 <TextInput
                   style={styles.textInput}
                   value={password}
@@ -150,45 +150,42 @@ export default function LoginScreen({ navigation }) {
                   secureTextEntry={!showPw}
                 />
                 <TouchableOpacity onPress={() => setShowPw(!showPw)} style={styles.eyeIcon}>
-                  <Ionicons name={showPw ? "eye-off-outline" : "eye-outline"} size={20} color={COLORS.slate400} />
+                  <Ionicons name={showPw ? "eye-off-outline" : "eye-outline"} size={18} color={COLORS.slate400} />
                 </TouchableOpacity>
               </View>
 
-              {/* Remember & Forgot Password */}
+              {/* Remember & Forgot */}
               <View style={styles.rowBetween}>
                 <TouchableOpacity style={styles.row} onPress={() => setRemember(!remember)} activeOpacity={0.7}>
-                  <Ionicons name={remember ? "checkbox" : "square-outline"} size={20} color={remember ? accent : COLORS.slate400} />
-                  <Text style={styles.rememberText}>Remember password</Text>
+                  <Ionicons name={remember ? "checkbox" : "square-outline"} size={18} color={remember ? COLORS.brand600 : COLORS.slate400} />
+                  <Text style={styles.rememberText}>Remember me</Text>
                 </TouchableOpacity>
                 <TouchableOpacity>
-                  <Text style={[styles.forgotText, { color: accent }]}>Forget password?</Text>
+                  <Text style={styles.forgotText}>Forgot password?</Text>
                 </TouchableOpacity>
               </View>
 
-              {/* Submit Button */}
+              {/* Submit */}
               <TouchableOpacity
-                style={[styles.loginBtn, { backgroundColor: accent, opacity: loading ? 0.7 : 1 }]}
+                style={[styles.loginBtn, { opacity: loading ? 0.7 : 1 }]}
                 onPress={handleLogin}
                 disabled={loading}
                 activeOpacity={0.8}
               >
-                {loading ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.loginBtnText}>Login</Text>}
+                {loading ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.loginBtnText}>Sign In</Text>}
               </TouchableOpacity>
             </View>
 
-            {/* Bottom Section - touch ID removed, social removed */}
-            <View style={styles.bottomSection}>
-              {/* empty — register row is now outside scroll */}
-            </View>
+            <View style={styles.bottomSection} />
 
           </ScrollView>
         </KeyboardAvoidingView>
 
-        {/* Register link — fixed at bottom, always visible */}
+        {/* Register link */}
         <View style={styles.registerRow}>
           <Text style={styles.registerText}>Don't have an account? </Text>
           <TouchableOpacity onPress={() => navigation.navigate('Register')} activeOpacity={0.7}>
-            <Text style={[styles.registerLink, { color: accent }]}>Register Now</Text>
+            <Text style={styles.registerLink}>Register Now</Text>
           </TouchableOpacity>
         </View>
 
@@ -199,49 +196,46 @@ export default function LoginScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bgLight },
-
   scroll: { flexGrow: 1, paddingHorizontal: SPACING.xl, paddingBottom: SPACING.lg },
   
-  headerWrap: { alignItems: 'center', marginTop: height * 0.05, marginBottom: SPACING.xl },
-  iconCircle: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center', marginBottom: SPACING.md, elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8 },
-  welcomeText: { fontSize: FONTS['3xl'], fontWeight: FONTS.extrabold, color: COLORS.white, textShadowColor: 'rgba(0,0,0,0.1)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 4 },
-  subText: { fontSize: FONTS.base, color: COLORS.white, opacity: 0.9, marginTop: 4 },
+  headerWrap: { alignItems: 'center', marginTop: height * 0.04, marginBottom: SPACING.xl },
+  iconCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center', marginBottom: SPACING.md, ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 8 }, android: { elevation: 8 } }) },
+  welcomeText: { fontSize: FONTS['3xl'], fontWeight: FONTS.extrabold, color: COLORS.white },
+  subText: { fontSize: FONTS.sm, color: 'rgba(255,255,255,0.85)', marginTop: 4 },
 
-  card: { backgroundColor: COLORS.white, borderRadius: 24, padding: SPACING.xl, paddingTop: SPACING['2xl'], shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 10, marginBottom: SPACING.xl },
+  card: { backgroundColor: COLORS.white, borderRadius: 20, padding: SPACING.xl, paddingTop: SPACING['2xl'], borderWidth: 1, borderColor: COLORS.border, ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 12 }, android: { elevation: 4 } }), marginBottom: SPACING.xl },
 
-  roleContainer: { flexDirection: 'row', backgroundColor: COLORS.slate50, borderRadius: RADIUS.full, padding: 4, marginBottom: SPACING.xl },
-  roleBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: RADIUS.full },
+  roleContainer: { flexDirection: 'row', backgroundColor: COLORS.slate50, borderRadius: RADIUS.full, padding: 3, marginBottom: SPACING.xl, borderWidth: 1, borderColor: COLORS.border },
+  roleBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: RADIUS.full },
   roleLabel: { fontSize: FONTS.sm, fontWeight: FONTS.bold },
 
-  errorBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.red50, padding: SPACING.md, borderRadius: RADIUS.md, marginBottom: SPACING.md },
+  errorBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.red50, padding: SPACING.md, borderRadius: RADIUS.sm, marginBottom: SPACING.md, borderWidth: 1, borderColor: COLORS.red200 },
   errorText: { color: COLORS.red700, fontSize: FONTS.sm, marginLeft: 8, flex: 1 },
 
-  inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.slate50, borderWidth: 1, borderColor: COLORS.slate200, borderRadius: RADIUS.md, marginBottom: SPACING.lg, paddingHorizontal: SPACING.md, height: 55 },
+  inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.slate50, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.md, marginBottom: SPACING.lg, paddingHorizontal: SPACING.md, height: 52 },
   inputIcon: { marginRight: SPACING.sm },
   textInput: { flex: 1, fontSize: FONTS.base, color: COLORS.slate800, height: '100%' },
   eyeIcon: { padding: SPACING.sm },
 
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING['2xl'] },
   row: { flexDirection: 'row', alignItems: 'center' },
-  rememberText: { fontSize: FONTS.sm, color: COLORS.slate600, marginLeft: 8 },
-  forgotText: { fontSize: FONTS.sm, fontWeight: FONTS.semibold },
+  rememberText: { fontSize: FONTS.sm, color: COLORS.slate600, marginLeft: 6 },
+  forgotText: { fontSize: FONTS.sm, fontWeight: FONTS.semibold, color: COLORS.brand600 },
 
-  loginBtn: { borderRadius: RADIUS.full, paddingVertical: 16, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 5 },
-  loginBtnText: { color: COLORS.white, fontSize: FONTS.lg, fontWeight: FONTS.bold, letterSpacing: 0.5 },
+  loginBtn: { backgroundColor: COLORS.brand600, borderRadius: RADIUS.full, paddingVertical: 15, alignItems: 'center' },
+  loginBtnText: { color: COLORS.white, fontSize: FONTS.lg, fontWeight: FONTS.bold },
 
   bottomSection: { paddingBottom: SPACING.sm },
 
-  // Register row — fixed at bottom of screen, always visible
   registerRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 18,
+    paddingVertical: 16,
     borderTopWidth: 1,
-    borderTopColor: COLORS.slate100,
-    backgroundColor: COLORS.bgLight,
+    borderTopColor: COLORS.border,
+    backgroundColor: COLORS.white,
   },
   registerText: { color: COLORS.slate500, fontSize: FONTS.base },
-  registerLink: { fontSize: FONTS.base, fontWeight: FONTS.bold },
+  registerLink: { fontSize: FONTS.base, fontWeight: FONTS.bold, color: COLORS.brand600 },
 });
-

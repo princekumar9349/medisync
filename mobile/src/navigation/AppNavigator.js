@@ -1,10 +1,10 @@
 /**
  * navigation/AppNavigator.js — Root navigation for Medisync Mobile
- * Business Theme UI Update
+ * Clean Medical Theme — Teal/White
  */
 
 import React from 'react';
-import { View, ActivityIndicator, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, TouchableOpacity, Platform, Text } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -37,27 +37,27 @@ import DoctorSearchScreen   from '../screens/doctor/DoctorSearchScreen';
 const Stack    = createNativeStackNavigator();
 const Tab      = createBottomTabNavigator();
 
-// ─── Custom Floating Tab Bar Button ───────────────────────────────────────────
-const FloatingTabBarButton = ({ children, onPress }) => (
+// ─── Custom Scan Button ───────────────────────────────────────────────────────
+const ScanTabButton = ({ children, onPress }) => (
   <TouchableOpacity
     style={{
-      top: -20,
+      top: -18,
       justifyContent: 'center',
       alignItems: 'center',
-      ...SHADOW.lg,
     }}
     onPress={onPress}
     activeOpacity={0.8}
   >
     <View style={{
-      width: 60,
-      height: 60,
-      borderRadius: 30,
+      width: 56,
+      height: 56,
+      borderRadius: 28,
       backgroundColor: COLORS.brand600,
       justifyContent: 'center',
       alignItems: 'center',
-      borderWidth: 4,
+      borderWidth: 3,
       borderColor: COLORS.white,
+      ...SHADOW.md,
     }}>
       {children}
     </View>
@@ -76,45 +76,41 @@ function PatientTabs() {
           else if (route.name === 'Chat') iconName = focused ? 'chatbubble' : 'chatbubble-outline';
           else if (route.name === 'Profile') iconName = focused ? 'person' : 'person-outline';
 
-          return <Ionicons name={iconName} size={24} color={color} />;
+          return <Ionicons name={iconName} size={22} color={color} />;
         },
         tabBarActiveTintColor: COLORS.brand600,
         tabBarInactiveTintColor: COLORS.slate400,
         tabBarStyle: {
           backgroundColor: COLORS.white,
-          borderTopWidth: 0,
-          elevation: 10,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: -4 },
-          shadowOpacity: 0.05,
-          shadowRadius: 10,
-          height: Platform.OS === 'ios' ? 85 : 70,
+          borderTopWidth: 1,
+          borderTopColor: COLORS.border,
+          height: Platform.OS === 'ios' ? 85 : 68,
           paddingBottom: Platform.OS === 'ios' ? 25 : 10,
-          paddingTop: 10,
+          paddingTop: 8,
         },
         tabBarLabelStyle: {
           fontSize: 10,
           fontWeight: FONTS.semibold,
-          marginTop: 4,
+          marginTop: 2,
         },
         headerShown: false,
       })}
     >
-      <Tab.Screen name="History" component={HistoryScreen} options={{ tabBarLabel: 'History' }} />
+      <Tab.Screen name="History" component={HistoryScreen} options={{ tabBarLabel: 'Home' }} />
       <Tab.Screen name="Pillbox" component={PillboxScreen} options={{ tabBarLabel: 'Pillbox' }} />
       
-      {/* Floating Center Button for Scan */}
+      {/* Center Scan Button */}
       <Tab.Screen 
         name="Scan" 
         component={ScanScreen} 
         options={{
           tabBarLabel: () => null,
-          tabBarIcon: () => <Ionicons name="scan" size={28} color={COLORS.white} />,
-          tabBarButton: (props) => <FloatingTabBarButton {...props} />
+          tabBarIcon: () => <Ionicons name="scan" size={26} color={COLORS.white} />,
+          tabBarButton: (props) => <ScanTabButton {...props} />,
         }} 
       />
 
-      <Tab.Screen name="Chat" component={ChatScreen} options={{ tabBarLabel: 'Assistant' }} />
+      <Tab.Screen name="Chat" component={ChatScreen} options={{ tabBarLabel: 'Chat' }} />
       <Tab.Screen name="Profile" component={ProfileScreen} options={{ tabBarLabel: 'Profile' }} />
     </Tab.Navigator>
   );
@@ -140,40 +136,36 @@ function DoctorTabs() {
           let iconName;
           if (route.name === 'Inbox') iconName = focused ? 'mail' : 'mail-outline';
           else if (route.name === 'Alerts') iconName = focused ? 'notifications' : 'notifications-outline';
-          return <Ionicons name={iconName} size={24} color={color} />;
+          return <Ionicons name={iconName} size={22} color={color} />;
         },
-        tabBarActiveTintColor: COLORS.brand600, // Unified to blue theme
+        tabBarActiveTintColor: COLORS.brand600,
         tabBarInactiveTintColor: COLORS.slate400,
         tabBarStyle: {
           backgroundColor: COLORS.white,
-          borderTopWidth: 0,
-          elevation: 10,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: -4 },
-          shadowOpacity: 0.05,
-          shadowRadius: 10,
-          height: Platform.OS === 'ios' ? 85 : 70,
+          borderTopWidth: 1,
+          borderTopColor: COLORS.border,
+          height: Platform.OS === 'ios' ? 85 : 68,
           paddingBottom: Platform.OS === 'ios' ? 25 : 10,
-          paddingTop: 10,
+          paddingTop: 8,
         },
         tabBarLabelStyle: {
           fontSize: 10,
           fontWeight: FONTS.semibold,
-          marginTop: 4,
+          marginTop: 2,
         },
         headerShown: false,
       })}
     >
       <Tab.Screen name="Inbox" component={DoctorInboxScreen} options={{ tabBarLabel: 'Inbox' }} />
       
-      {/* Floating Center Button for Patients Stack */}
+      {/* Center Patients Button */}
       <Tab.Screen 
         name="Patients" 
         component={DoctorPatientsStack} 
         options={{
           tabBarLabel: () => null,
-          tabBarIcon: () => <Ionicons name="people" size={28} color={COLORS.white} />,
-          tabBarButton: (props) => <FloatingTabBarButton {...props} />
+          tabBarIcon: () => <Ionicons name="people" size={26} color={COLORS.white} />,
+          tabBarButton: (props) => <ScanTabButton {...props} />,
         }} 
       />
 
@@ -187,9 +179,10 @@ function LoadingScreen() {
   return (
     <View style={styles.loader}>
       <View style={styles.loaderIcon}>
-        <Ionicons name="medical" size={32} color={COLORS.white} />
+        <Ionicons name="medical" size={28} color={COLORS.white} />
       </View>
-      <ActivityIndicator size="large" color={COLORS.brand500} style={{ marginTop: 24 }} />
+      <ActivityIndicator size="large" color={COLORS.brand500} style={{ marginTop: 20 }} />
+      <Text style={styles.loaderText}>Loading Medisync…</Text>
     </View>
   );
 }
@@ -243,15 +236,20 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.bgLight,
+    backgroundColor: COLORS.white,
   },
   loaderIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
+    width: 60,
+    height: 60,
+    borderRadius: 18,
     backgroundColor: COLORS.brand600,
     alignItems: 'center',
     justifyContent: 'center',
-    ...SHADOW.md,
+  },
+  loaderText: {
+    marginTop: 12,
+    fontSize: 13,
+    color: COLORS.slate400,
+    fontWeight: FONTS.medium,
   },
 });

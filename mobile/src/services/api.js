@@ -198,6 +198,32 @@ export async function apiChat(question, language = 'en', user_data = {}) {
   });
 }
 
+export async function apiChatAudio(audioUri, language = 'en') {
+  const token = await getToken();
+  const headers = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const formData = new FormData();
+  formData.append('file', {
+    uri: audioUri,
+    type: 'audio/m4a',
+    name: 'voice.m4a',
+  });
+
+  const res = await fetch(`${API_BASE}/chat/audio?language=${language}`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Audio chat failed (${res.status})`);
+  }
+
+  return res.json();
+}
+
 // ─── Doctor Chat ───────────────────────────────────────────────────────────────
 
 export async function apiSendDoctorMessage(message) {

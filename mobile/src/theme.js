@@ -2,26 +2,26 @@
  * theme.js — Medisync Design System for React Native
  * 
  * All colors, typography, spacing, and shared StyleSheet fragments.
- * Business Theme Overhaul.
+ * Clean Medical Theme — Teal/Green + White
  */
 
 import { StyleSheet, Platform } from 'react-native';
 
 // ─── Color Palette ─────────────────────────────────────────────────────────────
 export const COLORS = {
-  // Vibrant Business Blue (Primary Brand)
-  brand50:  '#EAF0FF',
-  brand100: '#CBE0FF',
-  brand200: '#9BBEFF',
-  brand300: '#6A9DFF',
-  brand400: '#3A7CFF',
-  brand500: '#1A61FF',
-  brand600: '#0B56DE', // Main Theme Color
-  brand700: '#0042BB',
-  brand800: '#002E8A',
-  brand900: '#001A59',
+  // Teal (Primary Brand)
+  brand50:  '#F0FDFA',
+  brand100: '#CCFBF1',
+  brand200: '#99F6E4',
+  brand300: '#5EEAD4',
+  brand400: '#2DD4BF',
+  brand500: '#14B8A6',
+  brand600: '#0D9488', // Main Theme Color
+  brand700: '#0F766E',
+  brand800: '#115E59',
+  brand900: '#134E4A',
 
-  // Emerald (Kept for specific status/success highlights, but not main theme)
+  // Emerald (Success / Adherence)
   emerald50:  '#ecfdf5',
   emerald100: '#d1fae5',
   emerald200: '#a7f3d0',
@@ -30,7 +30,7 @@ export const COLORS = {
   emerald700: '#047857',
   emerald800: '#065f46',
 
-  // Amber
+  // Amber (Warning)
   amber50:  '#fffbeb',
   amber100: '#fef3c7',
   amber400: '#fbbf24',
@@ -38,7 +38,7 @@ export const COLORS = {
   amber600: '#d97706',
   amber700: '#b45309',
 
-  // Red
+  // Red (Error / Danger)
   red50:  '#fef2f2',
   red100: '#fee2e2',
   red200: '#fecaca',
@@ -46,27 +46,32 @@ export const COLORS = {
   red500: '#ef4444',
   red600: '#dc2626',
   red700: '#b91c1c',
+  red800: '#991b1b',
 
-  // Slate
-  slate50:  '#F8F9FE', // Very soft off-white background
-  slate100: '#F1F4F9',
-  slate200: '#E2E8F0',
-  slate300: '#CBD5E1',
-  slate400: '#94A3B8',
-  slate500: '#64748B',
-  slate600: '#475569',
-  slate700: '#334155',
-  slate800: '#1E293B', // Darkest text
-  slate900: '#0F172A',
+  // Neutral (Gray scale — warm tint)
+  slate50:  '#FAFAFA',
+  slate100: '#F5F5F5',
+  slate200: '#E5E5E5',
+  slate300: '#D4D4D4',
+  slate400: '#A3A3A3',
+  slate500: '#737373',
+  slate600: '#525252',
+  slate700: '#404040',
+  slate800: '#262626',
+  slate900: '#171717',
 
   // Utility
-  white:       '#ffffff',
+  white:       '#FFFFFF',
   black:       '#000000',
   transparent: 'transparent',
 
   // Backgrounds
-  bgLight:   '#F8F9FE',
-  bgDoctor:  '#F8F9FE', // Unified!
+  bgLight:   '#FAFAFA',
+  bgDoctor:  '#FAFAFA',
+
+  // Borders
+  border:    '#E5E7EB',
+  borderLight: '#F3F4F6',
 };
 
 // ─── Typography ────────────────────────────────────────────────────────────────
@@ -101,31 +106,39 @@ export const SPACING = {
 export const RADIUS = {
   sm:   12,
   md:   16,
-  lg:   24,
-  xl:   32,
+  lg:   20,
+  xl:   24,
   full: 9999,
 };
 
 // ─── Shadows ───────────────────────────────────────────────────────────────────
 export const SHADOW = {
   sm: Platform.select({
-    ios: { shadowColor: '#0042BB', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6 },
-    android: { elevation: 2 },
+    ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3 },
+    android: { elevation: 1 },
   }),
   md: Platform.select({
-    ios: { shadowColor: '#0042BB', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.08, shadowRadius: 12 },
-    android: { elevation: 5 },
+    ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8 },
+    android: { elevation: 3 },
   }),
   lg: Platform.select({
-    ios: { shadowColor: '#0042BB', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.1, shadowRadius: 24 },
-    android: { elevation: 10 },
+    ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 16 },
+    android: { elevation: 6 },
   }),
 };
 
 // ─── Shared Styles ─────────────────────────────────────────────────────────────
 export const S = StyleSheet.create({
-  // Cards
+  // Cards — clean bordered style
   card: {
+    backgroundColor: COLORS.white,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: SPACING.lg,
+    marginBottom: SPACING.md,
+  },
+  cardElevated: {
     backgroundColor: COLORS.white,
     borderRadius: RADIUS.lg,
     padding: SPACING.lg,
@@ -134,7 +147,7 @@ export const S = StyleSheet.create({
   },
   cardBordered: {
     borderWidth: 1,
-    borderColor: COLORS.slate100,
+    borderColor: COLORS.border,
     backgroundColor: COLORS.white,
     borderRadius: RADIUS.lg,
     padding: SPACING.lg,
@@ -143,17 +156,13 @@ export const S = StyleSheet.create({
   // Buttons
   btnPrimary: {
     backgroundColor: COLORS.brand600,
-    borderRadius: RADIUS.full, // Pill-shaped
-    paddingVertical: 16,
+    borderRadius: RADIUS.full,
+    paddingVertical: 14,
     paddingHorizontal: SPACING.xl,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 8,
-    ...Platform.select({
-      android: { elevation: 4 },
-      ios: { shadowColor: COLORS.brand600, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 10 },
-    }),
   },
   btnPrimaryText: {
     color: COLORS.white,
@@ -165,7 +174,7 @@ export const S = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.brand200,
     borderRadius: RADIUS.full,
-    paddingVertical: 16,
+    paddingVertical: 14,
     paddingHorizontal: SPACING.xl,
     alignItems: 'center',
     justifyContent: 'center',
@@ -182,8 +191,8 @@ export const S = StyleSheet.create({
   input: {
     backgroundColor: COLORS.slate50,
     borderWidth: 1,
-    borderColor: COLORS.slate200,
-    borderRadius: RADIUS.full, // Pill-shaped inputs for business modern look
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
     paddingVertical: 14,
     paddingHorizontal: SPACING.xl,
     fontSize: FONTS.base,
@@ -194,35 +203,29 @@ export const S = StyleSheet.create({
     backgroundColor: COLORS.white,
   },
 
-  // Layout Wrappers (Business Theme Header + Overlap)
-  headerBackground: {
-    backgroundColor: COLORS.brand600,
-    paddingTop: 60,
-    paddingBottom: 40,
+  // Clean Header Bar (replaces blue header)
+  headerBar: {
+    backgroundColor: COLORS.white,
+    paddingTop: Platform.OS === 'ios' ? 56 : 48,
+    paddingBottom: SPACING.lg,
     paddingHorizontal: SPACING.xl,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
   },
   headerTitle: {
     fontSize: FONTS['2xl'],
     fontWeight: FONTS.bold,
-    color: COLORS.white,
+    color: COLORS.slate800,
   },
   headerSubtitle: {
-    fontSize: FONTS.base,
-    color: COLORS.brand100,
-    marginTop: 4,
-  },
-  overlapContainer: {
-    flex: 1,
-    backgroundColor: COLORS.bgLight,
-    borderTopLeftRadius: RADIUS.xl,
-    borderTopRightRadius: RADIUS.xl,
-    marginTop: -20, // Overlap the blue header
-    overflow: 'hidden',
+    fontSize: FONTS.sm,
+    color: COLORS.slate500,
+    marginTop: 2,
   },
 
-  // Screen
-  screen: { flex: 1, backgroundColor: COLORS.brand600 }, // Blue base so overlaps look nice
-  screenDoctor: { flex: 1, backgroundColor: COLORS.brand600 },
+  // Screen — clean white base
+  screen: { flex: 1, backgroundColor: COLORS.bgLight },
+  screenDoctor: { flex: 1, backgroundColor: COLORS.bgLight },
   scrollContent: { padding: SPACING.lg, paddingBottom: 60 },
 
   // Flex helpers
@@ -235,7 +238,7 @@ export const S = StyleSheet.create({
   sectionTitle: {
     fontSize: FONTS.sm,
     fontWeight: FONTS.bold,
-    color: COLORS.slate500,
+    color: COLORS.brand700,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: SPACING.sm,
@@ -245,7 +248,7 @@ export const S = StyleSheet.create({
     fontWeight: FONTS.bold,
     color: COLORS.slate700,
     marginBottom: 6,
-    marginLeft: 8,
+    marginLeft: 4,
   },
 
   // Badge
@@ -257,5 +260,5 @@ export const S = StyleSheet.create({
   },
 
   // Divider
-  divider: { height: 1, backgroundColor: COLORS.slate200, marginVertical: SPACING.md },
+  divider: { height: 1, backgroundColor: COLORS.border, marginVertical: SPACING.md },
 });
