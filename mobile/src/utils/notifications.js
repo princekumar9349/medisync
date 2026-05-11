@@ -5,8 +5,14 @@ export async function showFlashMessage(title, body) {
 }
 
 export async function setupNotifications() {
-  await NotificationService.requestPermissions();
-  await NotificationService.createChannels();
+  try {
+    console.log('[setupNotifications] Initializing notifications...');
+    await NotificationService.requestPermissions();
+    await NotificationService.createChannels();
+    console.log('[setupNotifications] Initialization complete.');
+  } catch (error) {
+    console.error('[setupNotifications] Error during initialization:', error);
+  }
 }
 
 export { NotificationService };

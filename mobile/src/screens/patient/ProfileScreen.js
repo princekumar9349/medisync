@@ -9,29 +9,13 @@ import {
   Switch, Alert, StatusBar, Platform
 } from 'react-native';
 import * as Speech from 'expo-speech';
-import * as Notifications from 'expo-notifications';
+import NotificationService from '../../services/NotificationService';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';
 import { COLORS, FONTS, SPACING, RADIUS, S, SHADOW } from '../../theme';
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
-
-if (Platform.OS === 'android') {
-  Notifications.setNotificationChannelAsync('default', {
-    name: 'default',
-    importance: Notifications.AndroidImportance.MAX,
-    vibrationPattern: [0, 250, 250, 250],
-    lightColor: '#FF231F7C',
-  });
-}
-
+// Removed expo-notifications handler to prevent conflicts with Notifee
 function ToggleRow({ icon, label, description, value, onValueChange }) {
   return (
     <View style={styles.toggleRow}>
@@ -70,11 +54,41 @@ export default function ProfileScreen() {
     ]);
   }
 
+  async function testImmediateNotification() {
+    try {
+      await NotificationService.testNotification();
+    } catch (e) {
+      Alert.alert('Error', 'Failed to show test notification: ' + e.message);
+    }
+  }
+
   async function scheduleReminder() {
-    const { status } = await Notifications.requestPermissionsAsync();
-    if (status !== 'granted') { Alert.alert('Permission Denied', 'Allow notifications in settings.'); return; }
-    await Notifications.scheduleNotificationAsync({ content: { title: "💊 Time for your Medicine!", body: "Check Medisync for your upcoming dose.", sound: true }, trigger: { seconds: 5 } });
-    Alert.alert('Reminder Set!', 'You will receive a notification shortly.');
+    try {
+      // Schedule 5 seconds in the future
+      await NotificationService.scheduleMedicineReminder(
+        { _id: 'test_1', name: 'Test Medicine', dosage: '1 pill' },
+        Date.now() + 5000
+      );
+      Alert.alert('Reminder Set!', 'You will receive a notification in 5 seconds.');
+    } catch (e) {
+      Alert.alert('Error', 'Failed to schedule reminder: ' + e.message);
+    }
+  }
+
+  async function checkBatteryOptimizations() {
+    if (Platform.OS === 'android') {
+      await NotificationService.openBatterySettings();
+    } else {
+      Alert.alert('Not available', 'Battery settings are only on Android.');
+    }
+  }
+  
+  async function openPowerManager() {
+    if (Platform.OS === 'android') {
+      await NotificationService.openPowerManagerSettings();
+    } else {
+      Alert.alert('Not available', 'Power manager settings are only on Android.');
+    }
   }
 
   const initials = user?.name?.[0]?.toUpperCase() || 'U';
@@ -119,7 +133,18 @@ export default function ProfileScreen() {
           <View style={S.card}>
             <ActionRow icon="mic" label="Test Voice Assistant" description="Hear a sample greeting" accent={COLORS.brand600} onPress={testVoice} />
             <View style={S.divider} />
-            <ActionRow icon="alarm" label="Test Notification" description="Schedule a 5s test alert" accent={COLORS.amber600} onPress={scheduleReminder} />
+            <ActionRow icon="notifications" label="Immediate Test Alert" description="Trigger local notification now" accent={COLORS.amber600} onPress={testImmediateNotification} />
+            <View style={S.divider} />
+            <ActionRow icon="alarm" label="Schedule Test Reminder" description="Schedule a 5s test alert" accent={COLORS.amber600} onPress={scheduleReminder} />
+          </View>
+        </View>
+        
+        <View style={styles.section}>
+          <Text style={S.sectionTitle}>Device Restrictions (Android)</Text>
+          <View style={S.card}>
+            <ActionRow icon="battery-charging" label="Battery Optimizations" description="Disable to fix notification delays" accent={COLORS.red500} onPress={checkBatteryOptimizations} />
+            <View style={S.divider} />
+            <ActionRow icon="settings-outline" label="Auto-Start / Power Manager" description="Fix for Realme/Xiaomi devices" accent={COLORS.red500} onPress={openPowerManager} />
           </View>
         </View>
 

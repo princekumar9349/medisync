@@ -118,3 +118,38 @@ Medisync operates on a robust, scalable microservices-inspired monolithic archit
 Document Generated for Medisync Project. 
 Status: Production-Ready (Deployed on Render / Vercel).
 ================================================================================
+AI Calling Reminder System Implementation
+The Production-Grade Automated AI Calling Reminder System and Caregiver Escalation framework has been successfully integrated into MediSync.
+
+What Was Completed
+1. Robust Data Architecture
+Expanded the UserProfile schema to safely store phone, phone_verified, and CallingPreferences.
+Created a CaregiverUpdate schema to track caregiver relations.
+Created an otps and call_logs collection in the MongoDB interface.
+2. Phone Verification & OTP Flow
+Built the POST /phone/send-otp and POST /phone/verify-otp endpoints in a dedicated routers/phone.py.
+Testing Capabilities: Implemented an environment-controlled MOCK_OTP fallback. If MOCK_OTP_ENABLED=true (default), the OTP 123456 bypasses Twilio SMS for zero-cost rapid development. It automatically routes to real Twilio SMS when disabled in production.
+Security Features: 5-minute expiry, strict 5-attempt retry limit, 1-minute rate-limiting cooldown per user, and duplicate phone checks to prevent abuse.
+3. Dynamic Scheduler Escalation Engine
+Reduced the services/scheduler.py background chron job interval from 30 minutes to 15 minutes to ensure near real-time adherence tracking.
+Implemented the 4-tier Intelligent Escalation Logic:
+15 mins late: Standard push notification.
+30 mins late: Urgent push notification.
+60 mins late: Automated AI phone call (powered by Twilio TwiML / Exotel stub) speaking the user's name and the exact missed medicine.
+Caregiver Escalation: Automatically triggers a high-priority Caregiver SMS if 3 or more doses are missed or escalated within a 24-hour window.
+4. Advanced Voice Provider Layer
+Integrated TwilioVoiceProvider to dispatch production voice calls and SMS.
+Designed an ExotelVoiceProvider stub to demonstrate seamless horizontal provider scalability for India-specific operations as requested.
+5. Mobile Application Integration
+Built a brand new CallingSettingsScreen.js for the patient app, offering an intuitive interface to:
+Input and verify their phone number via a custom OTP modal.
+Setup their Caregiver (Name, Phone, Relation).
+Configure AI Calling (Toggles for Auto-calling, Language preferences, Voice Type, and Critical-Only modes).
+Added CallingSettingsScreen to the PatientStackNav so it opens cleanly without conflicting with tab views.
+Updated the existing ProfileScreen.js to feature a direct route to the new setup screen.
+Verification
+The system was verified via localized architecture mapping:
+
+services/scheduler.py successfully parses and calculates delay_minutes against scheduled slots dynamically.
+The Voice Provider routing successfully discriminates between simulated and API environments.
+React Navigation routes cleanly handle the new API payload objects required by /me/calling-preferences and /me/caregiver.
