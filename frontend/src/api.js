@@ -7,7 +7,7 @@
  *  - Errors are thrown with clean messages
  */
 
-export const API_BASE = 'https://medisync-q8qq.onrender.com'
+export const API_BASE = 'https://medisync-backend-520988526649.asia-south1.run.app'
 
 // ─── Token Helpers ───────────────────────────────────────────────────────────
 

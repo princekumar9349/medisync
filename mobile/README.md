@@ -5,16 +5,8 @@
 ### 1. Set your backend IP
 Open `src/services/api.js` and update `API_BASE`:
 
-```js
-// Android Emulator (default):
-export const API_BASE = 'http://10.0.2.2:8000';
-
-// Physical Android device on same WiFi:
-export const API_BASE = 'http://192.168.X.X:8000';  // your PC's local IP
-
-// iOS Simulator:
-export const API_BASE = 'http://localhost:8000';
-```
+// Deployed Backend:
+export const API_BASE = 'https://medisync-backend-520988526649.asia-south1.run.app';
 
 ### 2. Install dependencies (already done)
 ```bash
@@ -85,13 +77,10 @@ rm -rf node_modules && npm install --legacy-peer-deps
 ```
 
 ### API connection refused on device
-- Make sure your PC firewall allows port 8000
-- Use your PC's local IP (not `localhost`) in `API_BASE`
-- Run `ipconfig` (Windows) or `ifconfig` (Linux/Mac) to find your IP
+- Make sure your device has internet access to reach the deployed backend.
 
 ### Android emulator API issues
-- Default `http://10.0.2.2:8000` maps to host's `localhost:8000`
-- Ensure FastAPI backend is running: `python main.py`
+- Ensure the backend is reachable: `https://medisync-backend-520988526649.asia-south1.run.app`
 
 ---
 

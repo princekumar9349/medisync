@@ -2,11 +2,9 @@
  * services/api.js — Centralized API layer for Medisync Mobile
  *
  * Mirrors the web api.js but uses AsyncStorage instead of localStorage.
- * All calls go to API_BASE — update this to your machine's local IP for device testing.
+ * All calls go to API_BASE — correctly configured for the deployed backend.
  *
- * Android Emulator: http://10.0.2.2:8000
- * Physical device:  http://<your-local-ip>:8000
- * Local browser:    http://127.0.0.1:8000
+ * Deployed Backend: https://medisync-backend-520988526649.asia-south1.run.app
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -15,7 +13,7 @@ import { Platform } from 'react-native';
 
 // ─── Config ────────────────────────────────────────────────────────────────────
 // Connect to Render Production URL
-export const API_BASE = 'https://medisync-q8qq.onrender.com';
+export const API_BASE = 'https://medisync-backend-520988526649.asia-south1.run.app';
 
 const TOKEN_KEY = 'medisync_token';
 const USER_KEY  = 'medisync_user';
