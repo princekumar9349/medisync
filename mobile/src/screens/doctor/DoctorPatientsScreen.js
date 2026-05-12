@@ -1,116 +1,310 @@
 /**
- * screens/doctor/DoctorPatientsScreen.js — Patient List
- * Clean Medical Theme — Teal/White
+ * DoctorPatientsScreen.js — Premium Patient Management
  */
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, ActivityIndicator, TextInput, Alert } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  View, Text, StyleSheet, FlatList, TouchableOpacity,
+  TextInput, ActivityIndicator, StatusBar, Animated,
+  RefreshControl, Platform, Alert,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
-import { COLORS, FONTS, SPACING, RADIUS, S, SHADOW } from '../../theme';
 import { apiGetDoctorPatients } from '../../services/api';
 
-const STATUS_CFG = {
-  active:   { bg: COLORS.brand50,   border: COLORS.brand200,   text: COLORS.brand700,   label: 'Active'   },
-  critical: { bg: COLORS.red50,     border: COLORS.red200,     text: COLORS.red700,     label: 'Critical' },
-  stable:   { bg: COLORS.emerald50, border: COLORS.emerald200, text: COLORS.emerald700, label: 'Stable'   },
+const C = {
+  bg: '#F0F4F8', surface: '#FFF', primary: '#0A4A6E', accent: '#0EA5E9',
+  emerald: '#10B981', amber: '#F59E0B', red: '#EF4444',
+  slate: '#64748B', dark: '#0F172A', border: '#E2E8F0',
 };
 
-function PatientCard({ patient, onPress }) {
-  const cfg = STATUS_CFG[patient.status] || STATUS_CFG.active;
+const FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'critical', label: '🔴 Critical' },
+  { id: 'active', label: '🟡 Active' },
+  { id: 'stable', label: '🟢 Stable' },
+];
+
+const RISK_CFG = {
+  critical: { color: C.red, bg: '#FEF2F2', border: '#FECACA', label: 'Critical' },
+  active:   { color: C.amber, bg: '#FFFBEB', border: '#FDE68A', label: 'Active' },
+  stable:   { color: C.emerald, bg: '#ECFDF5', border: '#A7F3D0', label: 'Stable' },
+};
+
+function AdherenceMini({ pct }) {
+  const w = Math.max(0, Math.min(100, pct || 0));
+  const color = w >= 75 ? C.emerald : w >= 50 ? C.amber : C.red;
   return (
-    <TouchableOpacity style={styles.patientCard} onPress={onPress} activeOpacity={0.8}>
-      <View style={S.row}>
-        <View style={styles.patientAvatar}><Ionicons name="person" size={22} color={COLORS.brand600} /></View>
-        <View style={{ flex: 1, marginLeft: 14 }}>
-          <Text style={styles.patientName}>{patient.name}</Text>
-          <Text style={styles.patientMeta}>Age {patient.age} · {patient.condition}</Text>
+    <View>
+      <View style={styles.miniTrack}>
+        <View style={[styles.miniFill, { width: `${w}%`, backgroundColor: color }]} />
+      </View>
+      <Text style={[styles.miniPct, { color }]}>{w}%</Text>
+    </View>
+  );
+}
+
+function PatientCard({ patient, onPress, index }) {
+  const slideAnim = useRef(new Animated.Value(30)).current;
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 350, delay: index * 60, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 350, delay: index * 60, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  const cfg = RISK_CFG[patient.status] || RISK_CFG.active;
+  const initial = patient.name?.charAt(0)?.toUpperCase() || 'P';
+  const isCritical = patient.status === 'critical';
+
+  return (
+    <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+      <TouchableOpacity
+        style={[styles.patientCard, isCritical && styles.criticalCard]}
+        onPress={onPress}
+        activeOpacity={0.85}
+      >
+        {isCritical && <View style={styles.criticalStripe} />}
+        <View style={styles.cardTop}>
+          <View style={[styles.avatar, { backgroundColor: cfg.bg, borderColor: cfg.border }]}>
+            <Text style={[styles.avatarText, { color: cfg.color }]}>{initial}</Text>
+          </View>
+          <View style={styles.cardMeta}>
+            <View style={styles.nameRow}>
+              <Text style={styles.patientName} numberOfLines={1}>{patient.name}</Text>
+              {isCritical && <Ionicons name="alert-circle" size={14} color={C.red} style={{ marginLeft: 6 }} />}
+            </View>
+            <Text style={styles.patientSub}>Age {patient.age} · {patient.condition || 'General'}</Text>
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: cfg.bg, borderColor: cfg.border }]}>
+            <Text style={[styles.statusText, { color: cfg.color }]}>{cfg.label}</Text>
+          </View>
         </View>
-        <View style={[styles.statusBadge, { backgroundColor: cfg.bg, borderColor: cfg.border }]}>
-          <Text style={[styles.statusText, { color: cfg.text }]}>{cfg.label}</Text>
+        <View style={styles.cardBottom}>
+          <View style={styles.metricBox}>
+            <Ionicons name="stats-chart" size={12} color={C.slate} />
+            <Text style={styles.metricLabel}>Adherence</Text>
+            <AdherenceMini pct={patient.adherence_pct} />
+          </View>
+          <View style={styles.metricSep} />
+          <View style={styles.metricBox}>
+            <Ionicons name="medkit" size={12} color={C.slate} />
+            <Text style={styles.metricLabel}>Medicines</Text>
+            <Text style={styles.metricVal}>{patient.medicine_count ?? '—'}</Text>
+          </View>
+          <View style={styles.metricSep} />
+          <View style={styles.metricBox}>
+            <Ionicons name="warning" size={12} color={patient.missed_today > 0 ? C.red : C.slate} />
+            <Text style={styles.metricLabel}>Missed Today</Text>
+            <Text style={[styles.metricVal, patient.missed_today > 0 && { color: C.red, fontWeight: '800' }]}>
+              {patient.missed_today ?? 0}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={C.border} style={{ alignSelf: 'center' }} />
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+function SkeletonCard() {
+  const anim = useRef(new Animated.Value(0.5)).current;
+  useEffect(() => {
+    Animated.loop(Animated.sequence([
+      Animated.timing(anim, { toValue: 1, duration: 700, useNativeDriver: true }),
+      Animated.timing(anim, { toValue: 0.5, duration: 700, useNativeDriver: true }),
+    ])).start();
+  }, []);
+  return (
+    <Animated.View style={[styles.patientCard, { opacity: anim }]}>
+      <View style={{ flexDirection: 'row', gap: 12 }}>
+        <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#E2E8F0' }} />
+        <View style={{ flex: 1, gap: 8 }}>
+          <View style={{ height: 14, backgroundColor: '#E2E8F0', borderRadius: 6, width: '60%' }} />
+          <View style={{ height: 11, backgroundColor: '#F1F5F9', borderRadius: 6, width: '40%' }} />
         </View>
       </View>
-    </TouchableOpacity>
+    </Animated.View>
   );
 }
 
 export default function DoctorPatientsScreen() {
   const navigation = useNavigation();
   const { logout } = useAuth();
-  const [patients, setPatients] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [patients, setPatients]     = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [searchQ, setSearchQ]       = useState('');
+  const [activeFilter, setFilter]   = useState('all');
+
+  const fetchPatients = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const data = await apiGetDoctorPatients();
+      setPatients(data.patients || []);
+    } catch {}
+    setLoading(false);
+    setRefreshing(false);
+  }, []);
 
   useEffect(() => {
-    async function fetchPatients() {
-      try { const data = await apiGetDoctorPatients(); setPatients(data.patients || []); }
-      catch (err) { console.error("Failed to fetch patients", err); }
-      finally { setLoading(false); }
-    }
-    const unsubscribe = navigation.addListener('focus', () => { fetchPatients(); });
+    const unsub = navigation.addListener('focus', () => fetchPatients(true));
     fetchPatients();
-    return unsubscribe;
-  }, [navigation]);
+    return unsub;
+  }, [navigation, fetchPatients]);
+
+  const filtered = patients.filter(p => {
+    const q = searchQ.toLowerCase();
+    const matchQ = !q || p.name?.toLowerCase().includes(q) || p.condition?.toLowerCase().includes(q);
+    const matchF = activeFilter === 'all' || p.status === activeFilter;
+    return matchQ && matchF;
+  });
 
   function handleLogout() {
-    Alert.alert('Logout', 'Are you sure?', [
+    if (Platform.OS === 'web') {
+      if (window.confirm('Are you sure you want to sign out?')) {
+        logout();
+      }
+      return;
+    }
+    Alert.alert('Logout', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: logout },
+      { text: 'Sign Out', style: 'destructive', onPress: logout },
     ]);
   }
 
   return (
-    <View style={S.screen}>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
-      <View style={[S.headerBar, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }]}>
-        <View>
-          <View style={S.row}><Text style={S.headerTitle}>My Patients</Text><View style={styles.countBadge}><Text style={styles.countText}>{patients.length}</Text></View></View>
-          <Text style={S.headerSubtitle}>Manage & monitor patients</Text>
-        </View>
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('SearchPatients')}><Ionicons name="person-add-outline" size={18} color={COLORS.brand600} /></TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn} onPress={handleLogout}><Ionicons name="log-out-outline" size={18} color={COLORS.red500} /></TouchableOpacity>
-        </View>
-      </View>
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={C.surface} />
 
-      {/* Search */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchBox}>
-          <Ionicons name="search" size={18} color={COLORS.slate400} style={{ marginRight: 8 }} />
-          <TextInput style={styles.searchInput} value={searchQuery} onChangeText={setSearchQuery} placeholder="Search Patient ID (e.g. P-1234)" placeholderTextColor={COLORS.slate400} onSubmitEditing={() => { const q = searchQuery.trim(); if (q) { setSearchQuery(''); navigation.navigate('PatientDetail', { patientId: q }); } }} returnKeyType="search" />
-        </View>
-      </View>
-
-      <ScrollView contentContainerStyle={[S.scrollContent, { paddingTop: SPACING.sm }]} showsVerticalScrollIndicator={false}>
-        {loading ? (
-          <View style={[S.center, { marginTop: 60 }]}><ActivityIndicator size="large" color={COLORS.brand500} /><Text style={{ color: COLORS.slate500, marginTop: 12 }}>Loading patients…</Text></View>
-        ) : patients.length === 0 ? (
-          <View style={{ padding: 40, alignItems: 'center', marginTop: 40 }}>
-            <View style={styles.emptyCircle}><Ionicons name="people-outline" size={44} color={COLORS.brand400} /></View>
-            <Text style={{ textAlign: 'center', color: COLORS.slate800, fontSize: FONTS.xl, fontWeight: FONTS.bold }}>No patients yet</Text>
-            <Text style={{ textAlign: 'center', color: COLORS.slate500, marginTop: 8, fontSize: FONTS.base, lineHeight: 22 }}>Tap the + button to search and add patients.</Text>
-            <TouchableOpacity style={{ marginTop: 20, backgroundColor: COLORS.brand600, borderRadius: RADIUS.full, paddingHorizontal: 24, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }} onPress={() => navigation.navigate('SearchPatients')}>
-              <Ionicons name="search" size={16} color={COLORS.white} /><Text style={{ color: COLORS.white, fontWeight: FONTS.bold }}>Find Patients</Text>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerTop}>
+          <View>
+            <Text style={styles.pageTitle}>My Patients</Text>
+            <Text style={styles.pageSubtitle}>{patients.length} patient{patients.length !== 1 ? 's' : ''} under care</Text>
+          </View>
+          <View style={styles.headerBtns}>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('SearchPatients')}>
+              <Ionicons name="person-add-outline" size={20} color={C.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.iconBtn, { borderColor: '#FECACA' }]} onPress={handleLogout}>
+              <Ionicons name="log-out-outline" size={20} color={C.red} />
             </TouchableOpacity>
           </View>
-        ) : patients.map(patient => <PatientCard key={patient.id} patient={patient} onPress={() => navigation.navigate('PatientDetail', { patientId: patient.id })} />)}
-      </ScrollView>
+        </View>
+
+        {/* Search */}
+        <View style={styles.searchBar}>
+          <Ionicons name="search" size={18} color={C.slate} style={{ marginRight: 8 }} />
+          <TextInput
+            style={styles.searchInput}
+            value={searchQ}
+            onChangeText={setSearchQ}
+            placeholder="Search patients, conditions..."
+            placeholderTextColor={C.slate}
+          />
+          {searchQ.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQ('')}>
+              <Ionicons name="close-circle" size={18} color={C.slate} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Filter chips */}
+        <View style={styles.filterRow}>
+          {FILTERS.map(f => (
+            <TouchableOpacity
+              key={f.id}
+              style={[styles.chip, activeFilter === f.id && styles.chipActive]}
+              onPress={() => setFilter(f.id)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.chipText, activeFilter === f.id && styles.chipTextActive]}>{f.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      {/* Patient List */}
+      {loading ? (
+        <View style={{ padding: 16, gap: 12 }}>
+          {[1, 2, 3].map(i => <SkeletonCard key={i} />)}
+        </View>
+      ) : (
+        <FlatList
+          data={filtered}
+          keyExtractor={item => item.id}
+          renderItem={({ item, index }) => (
+            <PatientCard
+              patient={item}
+              index={index}
+              onPress={() => navigation.navigate('PatientDetail', { patientId: item.id })}
+            />
+          )}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchPatients(true); }} tintColor={C.primary} />}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Ionicons name="people-outline" size={56} color="#CBD5E1" />
+              <Text style={styles.emptyTitle}>{searchQ ? 'No results' : 'No patients yet'}</Text>
+              <Text style={styles.emptySubtitle}>{searchQ ? 'Try a different search term' : 'Add patients using the + button'}</Text>
+              {!searchQ && (
+                <TouchableOpacity style={styles.addBtn} onPress={() => navigation.navigate('SearchPatients')}>
+                  <Ionicons name="person-add" size={16} color="#FFF" />
+                  <Text style={styles.addBtnText}>Add Patient</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          }
+        />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  countBadge: { backgroundColor: COLORS.brand50, borderRadius: RADIUS.full, paddingHorizontal: 8, paddingVertical: 3, marginLeft: 8, borderWidth: 1, borderColor: COLORS.brand200 },
-  countText: { fontSize: FONTS.sm, fontWeight: FONTS.bold, color: COLORS.brand700 },
-  iconBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.slate50, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
-  searchContainer: { paddingHorizontal: SPACING.xl, paddingVertical: SPACING.md, backgroundColor: COLORS.white, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.slate50, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.full, paddingHorizontal: 14, paddingVertical: 9 },
-  searchInput: { flex: 1, fontSize: FONTS.base, color: COLORS.slate800 },
-  patientCard: { backgroundColor: COLORS.white, borderRadius: RADIUS.lg, padding: SPACING.lg, marginBottom: SPACING.sm, borderWidth: 1, borderColor: COLORS.border },
-  patientAvatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: COLORS.brand50, alignItems: 'center', justifyContent: 'center' },
-  patientName: { fontSize: FONTS.lg, fontWeight: FONTS.bold, color: COLORS.slate800 },
-  patientMeta: { fontSize: FONTS.sm, color: COLORS.slate500, marginTop: 3 },
-  statusBadge: { borderWidth: 1, borderRadius: RADIUS.full, paddingHorizontal: 10, paddingVertical: 5, alignSelf: 'flex-start' },
-  statusText: { fontSize: FONTS.xs, fontWeight: FONTS.bold, textTransform: 'uppercase', letterSpacing: 0.5 },
-  emptyCircle: { width: 90, height: 90, borderRadius: 45, backgroundColor: COLORS.brand50, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  container: { flex: 1, backgroundColor: C.bg },
+  header: { backgroundColor: C.surface, paddingTop: Platform.OS === 'ios' ? 56 : 48, paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: C.border },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
+  pageTitle: { fontSize: 28, fontWeight: '900', color: C.dark, letterSpacing: -0.5 },
+  pageSubtitle: { fontSize: 13, color: C.slate, marginTop: 2, fontWeight: '500' },
+  headerBtns: { flexDirection: 'row', gap: 10, marginTop: 4 },
+  iconBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
+  searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.border, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 11, marginBottom: 12 },
+  searchInput: { flex: 1, fontSize: 15, color: C.dark },
+  filterRow: { flexDirection: 'row', gap: 8, paddingBottom: 4 },
+  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: '#F1F5F9', borderWidth: 1, borderColor: C.border },
+  chipActive: { backgroundColor: C.primary, borderColor: C.primary },
+  chipText: { fontSize: 13, fontWeight: '700', color: C.slate },
+  chipTextActive: { color: '#FFF' },
+  listContent: { padding: 16, paddingBottom: 100, gap: 12 },
+  patientCard: { backgroundColor: C.surface, borderRadius: 20, padding: 16, borderWidth: 1, borderColor: C.border, shadowColor: '#0A4A6E', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3, overflow: 'hidden' },
+  criticalCard: { borderColor: '#FECACA', borderWidth: 1.5 },
+  criticalStripe: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, backgroundColor: C.red },
+  cardTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
+  avatar: { width: 48, height: 48, borderRadius: 24, borderWidth: 2, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  avatarText: { fontSize: 20, fontWeight: '900' },
+  cardMeta: { flex: 1 },
+  nameRow: { flexDirection: 'row', alignItems: 'center' },
+  patientName: { fontSize: 16, fontWeight: '800', color: C.dark },
+  patientSub: { fontSize: 12, color: C.slate, marginTop: 3, fontWeight: '500' },
+  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1 },
+  statusText: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  cardBottom: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 12, padding: 10, gap: 4 },
+  metricBox: { flex: 1, alignItems: 'center', gap: 3 },
+  metricLabel: { fontSize: 10, color: C.slate, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.3 },
+  metricVal: { fontSize: 15, fontWeight: '800', color: C.dark },
+  metricSep: { width: 1, height: 30, backgroundColor: C.border },
+  miniTrack: { height: 5, backgroundColor: '#E2E8F0', borderRadius: 3, width: 48, overflow: 'hidden' },
+  miniFill: { height: '100%', borderRadius: 3 },
+  miniPct: { fontSize: 11, fontWeight: '800', textAlign: 'center', marginTop: 2 },
+  empty: { alignItems: 'center', paddingVertical: 60, gap: 12 },
+  emptyTitle: { fontSize: 20, fontWeight: '800', color: C.dark },
+  emptySubtitle: { fontSize: 14, color: C.slate, textAlign: 'center' },
+  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 24, marginTop: 8 },
+  addBtnText: { color: '#FFF', fontWeight: '800', fontSize: 14 },
 });

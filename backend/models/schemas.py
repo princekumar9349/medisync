@@ -54,6 +54,36 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=6)
     role: Literal["patient", "doctor"] = "patient"
+    # Optional fields — never block registration if missing
+    phone: Optional[str] = Field(None, max_length=20)
+    specialization: Optional[str] = Field(None, max_length=100)   # doctor only
+    verify_phone_now: bool = False   # opt-in OTP during registration
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Payload for POST /auth/forgot-password."""
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    """Payload for POST /auth/reset-password."""
+    email: EmailStr
+    reset_code: str = Field(..., min_length=6, max_length=6)
+    new_password: str = Field(..., min_length=6)
+
+
+class SessionInfoResponse(BaseModel):
+    """Basic session/device info returned by GET /auth/me/session."""
+    user_id: str
+    email: str
+    role: str
+    patient_id: Optional[str] = None
+    phone: Optional[str] = None
+    phone_verified: bool = False
+    specialization: Optional[str] = None
+    last_login_at: Optional[datetime] = None
+    login_count: int = 0
+    created_at: Optional[datetime] = None
 
 
 class UserLogin(BaseModel):
@@ -65,6 +95,78 @@ class UserLogin(BaseModel):
 class PatientLogin(BaseModel):
     """Simplified login for Patients (ID only)."""
     patient_id: str
+
+
+class CaretakerLogin(BaseModel):
+    """Caretaker login: patient_id + hashed PIN."""
+    patient_id: str = Field(..., min_length=4, max_length=20)
+    caretaker_pin: str = Field(..., min_length=4, max_length=6, pattern=r"^\d{4,6}$")
+
+
+class SetCaretakerPin(BaseModel):
+    """Patient sets/updates their caretaker access PIN."""
+    caretaker_pin: str = Field(..., min_length=4, max_length=6, pattern=r"^\d{4,6}$")
+    caretaker_name: Optional[str] = Field(None, max_length=100)
+
+
+# ─── Caretaker Management Schemas ─────────────────────────────────────────────
+
+CARETAKER_RELATIONSHIPS = [
+    "Father", "Mother", "Son", "Daughter",
+    "Sibling", "Spouse", "Nurse", "Relative", "Other"
+]
+
+class GenerateCaretakerPinRequest(BaseModel):
+    """Patient requests auto-generation of a new caretaker PIN."""
+    caretaker_name: Optional[str] = Field(None, max_length=100)
+    relationship: Optional[str] = Field(None, max_length=50)
+
+
+class GeneratedPinResponse(BaseModel):
+    """Response after generating a caretaker PIN — plain PIN shown ONCE."""
+    plain_pin: str          # shown to patient once, never stored
+    patient_id: str
+    caretaker_name: Optional[str] = None
+    relationship: Optional[str] = None
+    message: str = "Store this PIN safely — it cannot be retrieved again."
+
+
+class CaretakerActivityEntry(BaseModel):
+    """A single caretaker login/activity record."""
+    timestamp: datetime
+    session_number: int = 0
+    device_hint: Optional[str] = None   # future: user-agent / device
+
+
+class CaretakerStatusResponse(BaseModel):
+    """Full caretaker access status for patient settings screen."""
+    has_caretaker_pin: bool = False
+    access_enabled: bool = False
+    caretaker_name: Optional[str] = None
+    relationship: Optional[str] = None
+    patient_id: Optional[str] = None
+    last_login: Optional[datetime] = None
+    session_count: int = 0
+    # JWT info
+    session_duration_minutes: int = 60
+    pin_version: int = 0    # increments on regenerate — invalidates old JWTs
+
+
+class CaretakerToken(BaseModel):
+    """Extended token response for caretaker logins."""
+    access_token: str
+    token_type: str = "bearer"
+    linked_patient_id: str
+    patient_name: str
+    caretaker_name: Optional[str] = None
+    relationship: Optional[str] = None
+    expires_in: int = 3600   # 1 hour short expiry for caretaker sessions
+    session_number: int = 0  # incremental session counter
+
+
+class CaretakerToggleRequest(BaseModel):
+    """Patient enables or disables caretaker access without regenerating PIN."""
+    enabled: bool
 
 
 class UserProfile(BaseModel):
@@ -89,13 +191,17 @@ class UserProfile(BaseModel):
     caregiver_name: Optional[str] = None
     caregiver_phone: Optional[str] = None
     caregiver_relation: Optional[str] = None
+    # Caretaker PIN set by patient
+    has_caretaker_pin: bool = False
     # Calling Settings
     calling_preferences: CallingPreferences = Field(default_factory=CallingPreferences)
     created_at: datetime
 
 
 class UserUpdate(BaseModel):
-    """Payload for updating user profile (e.g. onboarding)."""
+    """Payload for updating user profile."""
+    name: Optional[str] = Field(None, min_length=2, max_length=100)
+    phone: Optional[str] = Field(None, max_length=20)
     age: Optional[int] = None
     gender: Optional[str] = None
     weight: Optional[float] = None
@@ -115,6 +221,9 @@ class TokenData(BaseModel):
     """Decoded JWT payload data."""
     user_id: Optional[str] = None
     email: Optional[str] = None
+    role: Optional[str] = None          # "patient", "doctor", "caretaker"
+    pin_version: Optional[int] = None   # caretaker JWTs carry pin_version
+
 
 
 # ─── Prescription / Scan ──────────────────────────────────────────────────────
@@ -392,3 +501,70 @@ class VoiceChatStartRequest(BaseModel):
 class VoiceChatResponse(BaseModel):
     session_id: str
     websocket_url: str
+
+
+# ─── Emergency System ─────────────────────────────────────────────────────────
+
+class EmergencyCreate(BaseModel):
+    """Payload for POST /emergency/trigger — patient triggers SOS."""
+    note: Optional[str] = Field(None, max_length=500)
+    location: Optional[str] = None   # optional GPS or address string
+
+class EmergencyOut(BaseModel):
+    """A single emergency event returned to the client."""
+    emergency_id: str
+    user_id: str
+    status: Literal["pending", "accepted", "resolved", "cancelled"] = "pending"
+    note: Optional[str] = None
+    location: Optional[str] = None
+    responder_id: Optional[str] = None
+    responder_name: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    resolved_at: Optional[datetime] = None
+    retry_count: int = 0
+
+class EmergencyStatusResponse(BaseModel):
+    """Response for GET /emergency/status"""
+    has_active: bool = False
+    emergency: Optional[EmergencyOut] = None
+
+class EmergencyResolvePayload(BaseModel):
+    """Payload for PUT /emergency/resolve"""
+    emergency_id: str
+    note: Optional[str] = None
+
+
+# ─── Enhanced Pillbox Dose State ─────────────────────────────────────────────
+
+class DoseMedEntry(BaseModel):
+    """Single medicine in a pillbox slot with full dose state."""
+    med_id: str
+    name: str
+    dosage: str = ""
+    timing: str = ""        # slot key: morning / afternoon / night
+    status: str = "upcoming"  # upcoming/active/late/missed/skipped/taken
+    rx_id: str = ""
+    is_critical: bool = False
+    window_open_ist: str = ""   # e.g. "07:00"
+    window_close_ist: str = ""  # e.g. "11:00"
+    late_window_ist: str = ""   # e.g. "09:00"
+    can_take: bool = False      # True only if status is active or late
+    can_skip: bool = False      # True if not yet resolved
+    log_id: Optional[str] = None  # reference to the dose_log _id
+
+class PillboxSlotsResponse(BaseModel):
+    """Full pillbox response with state-machine aware slots."""
+    slots: dict = {}            # { morning: [DoseMedEntry], ... }
+    alert_message: Optional[str] = None
+    summary: dict = {}          # { total: N, taken: N, missed: N, late: N, upcoming: N }
+    last_updated_ist: str = ""
+
+
+# ─── Patient Medicine Delete ──────────────────────────────────────────────────
+
+class PatientDeleteMedicinePayload(BaseModel):
+    """Payload for DELETE /prescription/{rx_id}/medicine/{med_index}"""
+    rx_id: str
+    med_index: int
+

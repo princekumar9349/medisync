@@ -1,103 +1,188 @@
-/**
- * screens/doctor/DoctorAlertsScreen.js — Send Alerts
- * Clean Medical Theme — Teal/White
- */
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, StatusBar } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, StatusBar, Animated, Platform, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { apiSendDoctorMessage } from '../../services/api';
-import { COLORS, FONTS, SPACING, RADIUS, S, SHADOW } from '../../theme';
+import { useAuth } from '../../context/AuthContext';
+import { apiBroadcastAlert } from '../../services/api';
 
-const SEVERITY_CFG = {
-  info:    { icon: 'information-circle', label: 'Info',    bg: COLORS.brand50,  border: COLORS.brand200, text: COLORS.brand700 },
-  warning: { icon: 'warning',            label: 'Warning', bg: COLORS.amber50,  border: '#F3D5A0',       text: COLORS.amber700 },
-  urgent:  { icon: 'alert-circle',       label: 'Urgent',  bg: COLORS.red50,    border: COLORS.red200,   text: COLORS.red700 },
-};
+const C = { bg:'#F0F4F8', surface:'#FFF', primary:'#0A4A6E', accent:'#0EA5E9', emerald:'#10B981', amber:'#F59E0B', red:'#EF4444', slate:'#64748B', dark:'#0F172A', border:'#E2E8F0' };
+
+const SEVERITIES = [
+  { id:'info',    label:'INFO',     icon:'information-circle', color:'#0EA5E9', bg:'#EFF6FF' },
+  { id:'warning', label:'WARNING',  icon:'warning',            color:'#F59E0B', bg:'#FFFBEB' },
+  { id:'urgent',  label:'URGENT',   icon:'alert-circle',       color:'#EF4444', bg:'#FEF2F2' },
+];
+
+function SeverityBtn({ cfg, selected, onPress }) {
+  const scale = useRef(new Animated.Value(1)).current;
+  return (
+    <TouchableOpacity
+      style={[s.sevBtn, selected && { borderColor:cfg.color, backgroundColor:cfg.bg }]}
+      onPress={() => { Animated.sequence([Animated.timing(scale,{toValue:0.92,duration:80,useNativeDriver:true}),Animated.timing(scale,{toValue:1,duration:80,useNativeDriver:true})]).start(); onPress(); }}
+      activeOpacity={0.85}
+    >
+      <Ionicons name={cfg.icon} size={26} color={selected?cfg.color:'#94A3B8'} />
+      <Text style={[s.sevLabel, { color:selected?cfg.color:'#94A3B8' }]}>{cfg.label}</Text>
+    </TouchableOpacity>
+  );
+}
 
 export default function DoctorAlertsScreen() {
-  const [alertMsg, setAlertMsg] = useState('');
-  const [severity, setSeverity] = useState('info');
+  const { user } = useAuth();
+  const [msg, setMsg]         = useState('');
+  const [severity, setSev]    = useState('info');
   const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
-  const [error, setError] = useState(null);
-  const [recentAlerts, setRecentAlerts] = useState([]);
-  const cfg = SEVERITY_CFG[severity];
+  const [sent, setSent]       = useState(false);
+  const [error, setError]     = useState(null);
+  const [log, setLog]         = useState([]);
+  const MAX = 300;
 
   async function sendAlert() {
-    if (!alertMsg.trim()) return;
+    if (!msg.trim() || msg.length > MAX) return;
     setSending(true); setError(null);
     try {
-      await apiSendDoctorMessage(`[${severity.toUpperCase()} ALERT] ${alertMsg.trim()}`);
-      setRecentAlerts(prev => [{ id: Date.now(), severity, message: alertMsg.trim(), timestamp: new Date().toISOString() }, ...prev]);
-      setSent(true); setAlertMsg(''); setTimeout(() => setSent(false), 3000);
-    } catch { setError('Failed to send alert.'); }
-    finally { setSending(false); }
+      await apiBroadcastAlert(`[${severity.toUpperCase()} ALERT] ${msg.trim()}`, severity);
+      setLog(prev => [{ id:Date.now(), severity, message:msg.trim(), ts:new Date().toISOString() }, ...prev]);
+      setMsg(''); setSent(true);
+      setTimeout(() => setSent(false), 3000);
+    } catch { setError('Failed to send. Please try again.'); }
+    setSending(false);
   }
 
-  return (
-    <View style={S.screen}>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
-      <View style={S.headerBar}><Text style={S.headerTitle}>Send Alert</Text><Text style={S.headerSubtitle}>Notify patients about urgent matters</Text></View>
+  const sevCfg = SEVERITIES.find(s => s.id === severity);
 
-      <ScrollView contentContainerStyle={S.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.card}>
-          <Text style={S.sectionTitle}>Alert Severity</Text>
-          <View style={styles.severityRow}>
-            {Object.entries(SEVERITY_CFG).map(([key, c]) => (
-              <TouchableOpacity key={key} style={[styles.severityBtn, { borderColor: severity === key ? c.border : COLORS.border }, severity === key && { backgroundColor: c.bg }]} onPress={() => setSeverity(key)} activeOpacity={0.8}>
-                <Ionicons name={c.icon} size={22} color={severity === key ? c.text : COLORS.slate400} />
-                <Text style={[styles.severityLabel, { color: severity === key ? c.text : COLORS.slate500 }]}>{c.label}</Text>
-              </TouchableOpacity>
+  return (
+    <View style={s.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={C.surface} />
+
+      <View style={s.header}>
+        <View style={s.headerTop}>
+          <View style={s.docAvatar}><Text style={s.docAvatarTxt}>{user?.name?.charAt(0)?.toUpperCase()||'D'}</Text></View>
+          <View style={{ marginLeft:14, flex:1 }}>
+            <Text style={s.headerGreet}>System Broadcast</Text>
+            <Text style={s.headerName}>Dr. {user?.name||'Doctor'}</Text>
+          </View>
+        </View>
+        <Text style={s.pageTitle}>Send Alert</Text>
+        <Text style={s.pageSub}>Transmit advisories to your patients</Text>
+      </View>
+
+      <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+        <View style={s.card}>
+          <Text style={s.sectionTitle}>Alert Severity</Text>
+          <View style={s.sevRow}>
+            {SEVERITIES.map(cfg => (
+              <SeverityBtn key={cfg.id} cfg={cfg} selected={severity===cfg.id} onPress={()=>setSev(cfg.id)} />
             ))}
           </View>
 
-          <Text style={[S.sectionTitle, { marginTop: SPACING.xl }]}>Message</Text>
-          <TextInput style={styles.msgInput} value={alertMsg} onChangeText={setAlertMsg} placeholder="e.g., Please take your medication immediately." placeholderTextColor={COLORS.slate400} multiline numberOfLines={4} textAlignVertical="top" />
+          <View style={s.msgHeader}>
+            <Text style={s.sectionTitle}>Message</Text>
+            <Text style={[s.charCount, msg.length>MAX&&{color:C.red}]}>{msg.length}/{MAX}</Text>
+          </View>
 
-          {alertMsg.trim() ? (<View style={[styles.preview, { backgroundColor: cfg.bg, borderColor: cfg.border }]}><Text style={[styles.previewLabel, { color: cfg.text }]}>Preview:</Text><View style={S.row}><Ionicons name={cfg.icon} size={14} color={cfg.text} style={{ marginRight: 6 }} /><Text style={{ fontSize: FONTS.sm, color: cfg.text, flex: 1, lineHeight: 20 }}>[{severity.toUpperCase()}] {alertMsg}</Text></View></View>) : null}
-          {error && (<View style={styles.errorBox}><Ionicons name="warning-outline" size={18} color={COLORS.red700} style={{ marginRight: 8 }} /><Text style={{ color: COLORS.red700, fontSize: FONTS.sm, flex: 1 }}>{error}</Text></View>)}
+          <View style={[s.inputWrap, msg.length>0&&{borderColor:sevCfg?.color}]}>
+            <TextInput
+              style={s.msgInput}
+              value={msg}
+              onChangeText={setMsg}
+              placeholder="Type your alert message..."
+              placeholderTextColor={C.slate}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
+          </View>
+
+          {error && (
+            <View style={s.errorBox}>
+              <Ionicons name="alert-circle" size={18} color={C.red} />
+              <Text style={s.errorText}>{error}</Text>
+            </View>
+          )}
 
           {sent ? (
-            <View style={styles.sentBanner}><Ionicons name="checkmark-circle" size={22} color={COLORS.emerald600} style={{ marginRight: 8 }} /><Text style={styles.sentText}>Alert sent!</Text></View>
+            <View style={s.sentBox}>
+              <Ionicons name="checkmark-circle" size={22} color={C.emerald} />
+              <Text style={s.sentText}>Alert dispatched successfully!</Text>
+            </View>
           ) : (
-            <TouchableOpacity style={[styles.sendBtn, { opacity: (!alertMsg.trim() || sending) ? 0.5 : 1 }]} onPress={sendAlert} disabled={!alertMsg.trim() || sending} activeOpacity={0.85}>
-              {sending ? <ActivityIndicator color={COLORS.white} /> : (<><Ionicons name="send" size={18} color={COLORS.white} style={{ marginRight: 8 }} /><Text style={styles.sendBtnText}>Send Alert</Text></>)}
+            <TouchableOpacity
+              style={[s.sendBtn, { backgroundColor:sevCfg?.color||C.primary, opacity:(!msg.trim()||msg.length>MAX||sending)?0.55:1 }]}
+              disabled={!msg.trim()||msg.length>MAX||sending}
+              onPress={sendAlert}
+              activeOpacity={0.85}
+            >
+              {sending ? <ActivityIndicator color="#FFF" /> : (
+                <View style={{flexDirection:'row',alignItems:'center',gap:8}}>
+                  <Text style={s.sendBtnText}>Send Alert</Text>
+                  <Ionicons name="send" size={18} color="#FFF" />
+                </View>
+              )}
             </TouchableOpacity>
           )}
         </View>
 
-        <View style={styles.card}>
-          <Text style={S.sectionTitle}>Recent Alerts</Text>
-          {recentAlerts.length === 0 ? (
-            <View style={[S.center, { paddingVertical: 28 }]}><View style={styles.emptyCircle}><Ionicons name="mail-open-outline" size={36} color={COLORS.brand400} /></View><Text style={{ color: COLORS.slate500, fontSize: FONTS.sm, fontWeight: FONTS.bold, marginTop: 8 }}>No alerts sent yet</Text></View>
-          ) : recentAlerts.map(alert => {
-            const ac = SEVERITY_CFG[alert.severity] || SEVERITY_CFG.info;
-            return (
-              <View key={alert.id} style={[styles.alertHistItem, { backgroundColor: ac.bg, borderColor: ac.border }]}>
-                <Ionicons name={ac.icon} size={22} color={ac.text} style={{ marginRight: 10, marginTop: 2 }} />
-                <View style={{ flex: 1 }}><Text style={{ fontSize: FONTS.xs, fontWeight: FONTS.bold, color: ac.text, textTransform: 'uppercase', letterSpacing: 0.5 }}>{alert.severity}</Text><Text style={{ fontSize: FONTS.sm, color: COLORS.slate800, marginTop: 4, lineHeight: 20 }}>{alert.message}</Text><Text style={{ fontSize: 11, color: COLORS.slate500, marginTop: 4 }}>{new Date(alert.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text></View>
+        {/* Alert Log */}
+        <Text style={s.logTitle}>Recent Transmissions</Text>
+        {log.length === 0 ? (
+          <View style={s.emptyLog}>
+            <Ionicons name="megaphone-outline" size={40} color="#CBD5E1" />
+            <Text style={s.emptyLogText}>No alerts sent yet</Text>
+          </View>
+        ) : log.map(a => {
+          const cfg = SEVERITIES.find(sc => sc.id === a.severity) || SEVERITIES[0];
+          return (
+            <View key={a.id} style={[s.logCard, { borderLeftColor:cfg.color }]}>
+              <View style={[s.logIcon, { backgroundColor:cfg.bg }]}>
+                <Ionicons name={cfg.icon} size={18} color={cfg.color} />
               </View>
-            );
-          })}
-        </View>
+              <View style={{ flex:1 }}>
+                <View style={{flexDirection:'row',justifyContent:'space-between',marginBottom:3}}>
+                  <Text style={[s.logSev, { color:cfg.color }]}>{cfg.label}</Text>
+                  <Text style={s.logTime}>{new Date(a.ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</Text>
+                </View>
+                <Text style={s.logMsg}>{a.message}</Text>
+              </View>
+            </View>
+          );
+        })}
       </ScrollView>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  card: { backgroundColor: COLORS.white, borderRadius: RADIUS.lg, padding: SPACING.lg, marginBottom: SPACING.md, borderWidth: 1, borderColor: COLORS.border },
-  severityRow: { flexDirection: 'row', gap: 10 },
-  severityBtn: { flex: 1, alignItems: 'center', paddingVertical: 14, borderRadius: RADIUS.md, borderWidth: 1.5 },
-  severityLabel: { fontSize: FONTS.xs, fontWeight: FONTS.bold, marginTop: 6, textTransform: 'uppercase' },
-  msgInput: { backgroundColor: COLORS.slate50, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.sm, padding: 14, fontSize: FONTS.base, color: COLORS.slate800, minHeight: 110, textAlignVertical: 'top', marginBottom: SPACING.lg },
-  preview: { borderWidth: 1, borderRadius: RADIUS.sm, padding: 14, marginBottom: SPACING.lg },
-  previewLabel: { fontSize: FONTS.xs, fontWeight: FONTS.bold, marginBottom: 6, textTransform: 'uppercase' },
-  errorBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.red50, borderWidth: 1, borderColor: COLORS.red200, borderRadius: RADIUS.sm, padding: SPACING.md, marginBottom: SPACING.lg },
-  sentBanner: { flexDirection: 'row', backgroundColor: COLORS.emerald50, borderRadius: RADIUS.full, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.emerald200 },
-  sentText: { color: COLORS.emerald700, fontSize: FONTS.base, fontWeight: FONTS.bold },
-  sendBtn: { flexDirection: 'row', backgroundColor: COLORS.brand600, borderRadius: RADIUS.full, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
-  sendBtnText: { color: COLORS.white, fontSize: FONTS.base, fontWeight: FONTS.bold },
-  alertHistItem: { flexDirection: 'row', alignItems: 'flex-start', borderWidth: 1, borderRadius: RADIUS.sm, padding: 14, marginTop: 10 },
-  emptyCircle: { width: 70, height: 70, borderRadius: 35, backgroundColor: COLORS.brand50, alignItems: 'center', justifyContent: 'center' },
+const s = StyleSheet.create({
+  container:{ flex:1, backgroundColor:C.bg },
+  header:{ backgroundColor:C.surface, paddingTop:Platform.OS==='ios'?56:48, paddingHorizontal:22, paddingBottom:14, borderBottomWidth:1, borderBottomColor:C.border },
+  headerTop:{ flexDirection:'row', alignItems:'center', marginBottom:16 },
+  docAvatar:{ width:48, height:48, borderRadius:24, backgroundColor:C.primary, alignItems:'center', justifyContent:'center' },
+  docAvatarTxt:{ color:'#FFF', fontSize:18, fontWeight:'900' },
+  headerGreet:{ fontSize:12, color:C.slate, fontWeight:'600' },
+  headerName:{ fontSize:18, color:C.dark, fontWeight:'800' },
+  pageTitle:{ fontSize:30, fontWeight:'900', color:C.dark, letterSpacing:-0.5, marginBottom:2 },
+  pageSub:{ fontSize:13, color:C.slate, fontWeight:'500' },
+  content:{ padding:20, paddingBottom:120 },
+  card:{ backgroundColor:C.surface, borderRadius:22, padding:22, marginBottom:24, shadowColor:'#0A4A6E', shadowOffset:{width:0,height:4}, shadowOpacity:0.08, shadowRadius:12, elevation:4 },
+  sectionTitle:{ fontSize:13, fontWeight:'800', color:C.dark, marginBottom:14, textTransform:'uppercase', letterSpacing:0.5 },
+  sevRow:{ flexDirection:'row', gap:10, marginBottom:22 },
+  sevBtn:{ flex:1, alignItems:'center', paddingVertical:14, borderRadius:16, borderWidth:1.5, borderColor:C.border, backgroundColor:'#F8FAFC', gap:8 },
+  sevLabel:{ fontSize:11, fontWeight:'800', letterSpacing:0.5 },
+  msgHeader:{ flexDirection:'row', justifyContent:'space-between', alignItems:'center' },
+  charCount:{ fontSize:12, fontWeight:'600', color:C.slate, marginBottom:14 },
+  inputWrap:{ borderWidth:1.5, borderColor:C.border, borderRadius:16, backgroundColor:'#F8FAFC', marginBottom:20 },
+  msgInput:{ padding:16, fontSize:15, color:C.dark, minHeight:130, textAlignVertical:'top', fontWeight:'500' },
+  errorBox:{ flexDirection:'row', alignItems:'center', gap:8, backgroundColor:'#FEF2F2', borderWidth:1, borderColor:'#FECACA', borderRadius:14, padding:13, marginBottom:16 },
+  errorText:{ color:C.red, fontSize:13, fontWeight:'700', flex:1 },
+  sentBox:{ flexDirection:'row', alignItems:'center', justifyContent:'center', gap:10, backgroundColor:'#ECFDF5', borderWidth:1, borderColor:'#A7F3D0', borderRadius:16, paddingVertical:16 },
+  sentText:{ color:C.dark, fontSize:15, fontWeight:'800' },
+  sendBtn:{ borderRadius:16, paddingVertical:17, alignItems:'center', justifyContent:'center' },
+  sendBtnText:{ color:'#FFF', fontSize:16, fontWeight:'800' },
+  logTitle:{ fontSize:14, fontWeight:'800', color:C.slate, textTransform:'uppercase', letterSpacing:0.5, marginBottom:12 },
+  logCard:{ flexDirection:'row', alignItems:'flex-start', gap:12, backgroundColor:C.surface, borderRadius:18, padding:14, marginBottom:10, borderLeftWidth:4, shadowColor:'#000', shadowOffset:{width:0,height:2}, shadowOpacity:0.04, shadowRadius:6, elevation:2 },
+  logIcon:{ width:40, height:40, borderRadius:12, alignItems:'center', justifyContent:'center' },
+  logSev:{ fontSize:11, fontWeight:'900', letterSpacing:0.5 },
+  logTime:{ fontSize:11, color:C.slate, fontWeight:'600' },
+  logMsg:{ fontSize:13, color:C.dark, fontWeight:'500', lineHeight:18 },
+  emptyLog:{ alignItems:'center', paddingVertical:40, gap:10 },
+  emptyLogText:{ fontSize:14, color:'#94A3B8', fontWeight:'500' },
 });

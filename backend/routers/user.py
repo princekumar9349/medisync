@@ -85,6 +85,13 @@ def get_profile(current_user: TokenData = Depends(get_current_user)):
         "caregiver_relation": user.get("caregiver_relation"),
         "calling_preferences": user.get("calling_preferences", {}),
         "created_at": user.get("created_at"),
+        # Caretaker access status — used by ProfileScreen & CaretakerSettingsScreen
+        "has_caretaker_pin": bool(user.get("caretaker_pin_hash")),
+        "caretaker_access_enabled": user.get("caretaker_access_enabled", False) and bool(user.get("caretaker_pin_hash")),
+        "caretaker_access_name": user.get("caretaker_access_name"),
+        "caretaker_relationship": user.get("caretaker_relationship"),
+        "caretaker_last_login": user.get("caretaker_last_login"),
+        "caretaker_session_count": user.get("caretaker_session_count", 0),
     }
 
 @router.put(
@@ -244,18 +251,103 @@ def get_prescriptions(
 
 @router.get(
     "/insights",
-    summary="Get AI-generated adherence insights for the current user",
+    summary="Get AI-generated adherence insights with accurate streak for the current user",
 )
 def get_insights(current_user: TokenData = Depends(get_current_user)):
     """
-    Analyze the user's dose logs and return an adherence report including:
-      - adherence_rate (0.0 – 1.0)
-      - risk_level: 'low' | 'medium' | 'high'
-      - recommendations (list of actionable suggestions)
-      - dose counts: expected / taken / missed
+    Analyze the user's dose logs and return an adherence report.
+    Streak = consecutive days where ALL required medicines were taken.
+    Partial days do NOT count. Critical medicine misses reset streak immediately.
     """
+    from collections import defaultdict
+    from datetime import timezone
+
     report = analyze_adherence(current_user.user_id)
-    return report.model_dump()
+
+    # ── Real Streak Calculation ───────────────────────────────────────────────
+    dose_logs_col     = database.get_dose_logs()
+    prescriptions_col = database.get_prescriptions()
+    users_col         = database.get_users()
+
+    current_streak = 0
+    longest_streak = 0
+    adherence_pct  = round(report.adherence_rate * 100)
+
+    if dose_logs_col is not None and prescriptions_col is not None:
+        # Count expected medicines per day from active prescriptions
+        latest_rx = prescriptions_col.find_one(
+            {"user_id": current_user.user_id}, sort=[("created_at", -1)]
+        )
+        expected_per_day = 0
+        critical_meds = set()
+        if latest_rx:
+            for med in latest_rx.get("medicines", []):
+                from routers.tracking import _resolve_target_slots
+                slots = _resolve_target_slots(med)
+                expected_per_day += len(slots)
+                if med.get("is_critical"):
+                    med_id = (med.get("name") or "").replace(" ", "_").lower()
+                    critical_meds.add(med_id)
+
+        if expected_per_day == 0:
+            expected_per_day = 1  # fallback
+
+        # Fetch last 60 days of logs
+        today_utc = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        sixty_ago = today_utc - timedelta(days=60)
+        logs = list(dose_logs_col.find({
+            "user_id":  current_user.user_id,
+            "timestamp": {"$gte": sixty_ago},
+            "status":   {"$in": ["taken", "missed", "skipped"]},
+        }))
+
+        # Aggregate by day
+        daily: dict = defaultdict(lambda: {"taken": 0, "critical_missed": False})
+        for log in logs:
+            ts = log["timestamp"]
+            day = ts.strftime("%Y-%m-%d")
+            if log["status"] == "taken":
+                daily[day]["taken"] += 1
+            elif log["status"] in ("missed", "skipped"):
+                if log.get("med_id") in critical_meds:
+                    daily[day]["critical_missed"] = True
+
+        # Calculate streak (walk backwards from yesterday)
+        streak = 0
+        best   = 0
+        for i in range(1, 61):
+            day = (today_utc - timedelta(days=i)).strftime("%Y-%m-%d")
+            d = daily.get(day, {"taken": 0, "critical_missed": False})
+            day_complete = (d["taken"] >= expected_per_day) and not d["critical_missed"]
+            if day_complete:
+                streak += 1
+                best = max(best, streak)
+            else:
+                break  # streak broken
+
+        current_streak = streak
+        longest_streak = best
+
+        # Persist updated streak to user document
+        if users_col is not None:
+            try:
+                users_col.update_one(
+                    {"_id": ObjectId(current_user.user_id)},
+                    {"$set": {
+                        "current_streak":  current_streak,
+                        "longest_streak":  max(longest_streak, current_streak),
+                        "last_streak_calc": datetime.utcnow(),
+                    }},
+                )
+            except Exception:
+                pass
+
+    result = report.model_dump()
+    result["current_streak"]  = current_streak
+    result["longest_streak"]  = longest_streak
+    result["adherence_pct"]   = adherence_pct
+    return result
+
 
 
 # ─── GET /adherence/weekly ────────────────────────────────────────────────────

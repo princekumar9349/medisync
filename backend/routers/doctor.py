@@ -233,22 +233,84 @@ def doctor_reply(payload: DoctorReplyCreate, current_user: TokenData = Depends(g
         "timestamp": datetime.utcnow()
     }
     col.insert_one(doc)
+
+    # ── FCM push + inbox notification to patient ──────────────────
+    try:
+        doctor_name = "Your Doctor"
+        users_col = database.get_users()
+        if users_col is not None:
+            doc_user = users_col.find_one({"_id": ObjectId(current_user.user_id)}, {"name": 1})
+            if doc_user:
+                doctor_name = doc_user.get("name", "Your Doctor")
+        from services.push_service import doctor_message_push
+        doctor_message_push(
+            patient_user_id=payload.patient_id,
+            doctor_name=doctor_name,
+            message_preview=payload.message.strip(),
+            thread_id=current_user.user_id,
+        )
+    except Exception as e:
+        logger.warning(f"[doctor_reply] Push notification failed (non-fatal): {e}")
+
     return _build_thread_response(col, payload.patient_id)
+
+class BroadcastAlertPayload(BaseModel):
+    message: str
+    severity: str = "info"
+
+@router.post("/broadcast", summary="Doctor broadcasts an alert to all assigned patients")
+def broadcast_alert(payload: BroadcastAlertPayload, current_user: TokenData = Depends(get_current_user)):
+    users_col = database.get_users()
+    chats_col = database.get_doctor_chats()
+    if users_col is None or chats_col is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    assigned_patients = list(users_col.find({"assigned_doctors": current_user.user_id}, {"_id": 1}))
+    if not assigned_patients:
+        return {"message": "No patients assigned to broadcast"}
+
+    docs = []
+    now = datetime.utcnow()
+    for p in assigned_patients:
+        docs.append({
+            "user_id": str(p["_id"]),
+            "doctor_id": current_user.user_id,
+            "message": payload.message.strip(),
+            "sender": "doctor",
+            "read": False,
+            "timestamp": now
+        })
+    
+    if docs:
+        chats_col.insert_many(docs)
+
+    return {"message": f"Alert broadcasted to {len(docs)} patients", "count": len(docs)}
 
 from models.schemas import PatientListResponse, PatientListOut, PatientProfileOut, AdherenceStats, GraphData, DoctorInboxResponse, DoctorInboxThread
 
-@router.get("/inbox", response_model=DoctorInboxResponse, summary="Get doctor's inbox threads")
+@router.get("/inbox", response_model=DoctorInboxResponse, summary="Get doctor's inbox (assigned patients only)")
 def get_doctor_inbox(current_user: TokenData = Depends(get_current_user)):
     chats_col = database.get_doctor_chats()
     users_col = database.get_users()
     if chats_col is None or users_col is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
 
+    # SECURITY FIX: Only fetch threads for patients assigned to this doctor
+    assigned_cursor = users_col.find(
+        {"assigned_doctors": current_user.user_id},
+        {"_id": 1, "name": 1}
+    )
+    assigned_map = {str(u["_id"]): u.get("name", "Unknown") for u in assigned_cursor}
+    if not assigned_map:
+        return DoctorInboxResponse(threads=[])
+
     pipeline = [
+        {"$match": {"user_id": {"$in": list(assigned_map.keys())}}},
         {"$sort": {"timestamp": -1}},
         {"$group": {
             "_id": "$user_id",
             "latest_message": {"$first": "$message"},
+            "latest_sender": {"$first": "$sender"},
             "timestamp": {"$first": "$timestamp"},
             "unread_count": {
                 "$sum": {
@@ -258,26 +320,75 @@ def get_doctor_inbox(current_user: TokenData = Depends(get_current_user)):
         }},
         {"$sort": {"timestamp": -1}}
     ]
-    
-    cursor = chats_col.aggregate(pipeline)
+
     threads = []
-    for doc in cursor:
-        patient_id = doc["_id"]
-        try:
-            user = users_col.find_one({"_id": ObjectId(patient_id)})
-        except Exception:
-            user = users_col.find_one({"patient_id": patient_id})
-            
-        if user:
+    for doc in chats_col.aggregate(pipeline):
+        pid = doc["_id"]
+        if pid in assigned_map:
             threads.append(DoctorInboxThread(
-                patient_id=str(user["_id"]),
-                patient_name=user.get("name", "Unknown"),
+                patient_id=pid,
+                patient_name=assigned_map[pid],
                 latest_message=doc["latest_message"],
                 timestamp=doc["timestamp"],
                 unread_count=doc["unread_count"]
             ))
-            
+
     return DoctorInboxResponse(threads=threads)
+
+
+@router.get("/patient-thread/{patient_id}", response_model=DoctorThreadResponse, summary="Doctor fetches a patient's full chat thread")
+def get_patient_thread(patient_id: str, current_user: TokenData = Depends(get_current_user)):
+    """
+    Returns the full message thread for a specific patient.
+    Security: patient must be assigned to the calling doctor.
+    """
+    chats_col = database.get_doctor_chats()
+    users_col  = database.get_users()
+    if chats_col is None or users_col is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    # Security: verify this patient belongs to the doctor
+    try:
+        patient = users_col.find_one({"_id": ObjectId(patient_id)})
+    except Exception:
+        patient = None
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    if current_user.user_id not in patient.get("assigned_doctors", []):
+        raise HTTPException(status_code=403, detail="Not authorized for this patient")
+
+    # Auto-mark patient messages as read when doctor opens the thread
+    chats_col.update_many(
+        {"user_id": patient_id, "sender": "user", "read": False},
+        {"$set": {"read": True, "seen_at": datetime.utcnow()}}
+    )
+
+    return _build_thread_response(chats_col, patient_id)
+
+
+class MarkSeenPayload(BaseModel):
+    patient_id: str
+
+@router.post("/mark-seen", summary="Doctor marks all messages from a patient as read")
+def mark_messages_seen(payload: MarkSeenPayload, current_user: TokenData = Depends(get_current_user)):
+    """Mark all unread patient messages in a thread as seen. Called when doctor opens chat."""
+    chats_col = database.get_doctor_chats()
+    users_col  = database.get_users()
+    if chats_col is None or users_col is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    try:
+        patient = users_col.find_one({"_id": ObjectId(payload.patient_id)})
+    except Exception:
+        patient = None
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    if current_user.user_id not in patient.get("assigned_doctors", []):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    result = chats_col.update_many(
+        {"user_id": payload.patient_id, "sender": "user", "read": False},
+        {"$set": {"read": True, "seen_at": datetime.utcnow()}}
+    )
+    return {"marked_seen": result.modified_count}
 
 
 @router.get("/patients", response_model=PatientListResponse, summary="List all patients for the doctor")
@@ -611,3 +722,708 @@ def patient_register_doctor(
         "doctor_id": doctor_id,
     }
 
+
+# ─── Doctor Dashboard Stats ───────────────────────────────────────────────────
+
+@router.get("/dashboard", summary="Get doctor dashboard summary stats")
+def get_doctor_dashboard(current_user: TokenData = Depends(get_current_user)):
+    users_col = database.get_users()
+    chats_col = database.get_doctor_chats()
+    dose_logs_col = database.get_dose_logs()
+    insights_col = database.get_insights()
+    symptoms_col = database.get_symptoms()
+
+    if users_col is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    from datetime import timedelta
+    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    assigned_patients = list(users_col.find(
+        {"assigned_doctors": current_user.user_id},
+        {"_id": 1, "name": 1}
+    ))
+    total_patients = len(assigned_patients)
+    assigned_ids = [str(p["_id"]) for p in assigned_patients]
+
+    critical_count = 0
+    if insights_col is not None:
+        critical_count = insights_col.count_documents({
+            "user_id": {"$in": assigned_ids},
+            "risk_level": "high"
+        })
+
+    unread_messages = 0
+    if chats_col is not None:
+        unread_messages = chats_col.count_documents({
+            "user_id": {"$in": assigned_ids},
+            "sender": "user",
+            "read": False
+        })
+
+    # ── Missed Today: IST-aware today boundary (UTC+5:30 = 330 min offset) ──
+    from datetime import timedelta as td
+    IST_OFFSET = td(hours=5, minutes=30)
+    now_ist = datetime.utcnow() + IST_OFFSET
+    today_ist_start = now_ist.replace(hour=0, minute=0, second=0, microsecond=0) - IST_OFFSET  # back to UTC
+
+    missed_today = 0
+    if dose_logs_col is not None and assigned_ids:
+        missed_today = dose_logs_col.count_documents({
+            "user_id": {"$in": assigned_ids},
+            "status": "missed",   # strictly missed only, not skipped
+            "timestamp": {"$gte": today_ist_start}
+        })
+
+    # ── High risk patients ──────────────────────────────────────────────────
+    high_risk_count = 0
+    if insights_col is not None and assigned_ids:
+        high_risk_count = insights_col.count_documents({
+            "user_id": {"$in": assigned_ids},
+            "risk_level": "high"
+        })
+
+    recent_alerts = []
+    if symptoms_col is not None:
+        sym_cursor = symptoms_col.find(
+            {"user_id": {"$in": assigned_ids}, "severity": {"$gte": 4}},
+            sort=[("timestamp", -1)], limit=5
+        )
+        for s in sym_cursor:
+            pid = s.get("user_id", "")
+            pname = next((p["name"] for p in assigned_patients if str(p["_id"]) == pid), "Unknown")
+            recent_alerts.append({
+                "patient_id": pid,
+                "patient_name": pname,
+                "symptom": s.get("symptom", ""),
+                "severity": s.get("severity", 3),
+                "timestamp": s.get("timestamp", datetime.utcnow()).isoformat()
+            })
+
+    weekly_adherence = 0.0
+    if dose_logs_col is not None and assigned_ids:
+        week_ago = today - timedelta(days=7)
+        logs = list(dose_logs_col.find({
+            "user_id": {"$in": assigned_ids},
+            "timestamp": {"$gte": week_ago}
+        }))
+        if logs:
+            taken = sum(1 for l in logs if l.get("status") == "taken")
+            weekly_adherence = round((taken / len(logs)) * 100, 1)
+
+    activity_feed = []
+    if chats_col is not None:
+        recent_msgs = list(chats_col.find(
+            {"user_id": {"$in": assigned_ids}, "sender": "user"},
+            sort=[("timestamp", -1)], limit=5
+        ))
+        for m in recent_msgs:
+            pid = m.get("user_id", "")
+            pname = next((p["name"] for p in assigned_patients if str(p["_id"]) == pid), "Unknown")
+            activity_feed.append({
+                "patient_id": pid,
+                "patient_name": pname,
+                "type": "message",
+                "content": m.get("message", "")[:80],
+                "timestamp": m.get("timestamp", datetime.utcnow()).isoformat()
+            })
+
+    return {
+        "total_patients": total_patients,
+        "critical_patients": critical_count,
+        "high_risk_patients": high_risk_count,
+        "unread_messages": unread_messages,
+        "missed_doses_today": missed_today,
+        "weekly_adherence": weekly_adherence,
+        "recent_alerts": recent_alerts,
+        "activity_feed": activity_feed,
+        "_meta": {
+            "scope": "assigned_patients_only",
+            "patient_count": total_patients,
+            "ist_today_boundary": today_ist_start.isoformat()
+        }
+    }
+
+
+# ─── Medicine Management ──────────────────────────────────────────────────────
+
+class AddMedicinePayload(BaseModel):
+    patient_id: str
+    name: str
+    dosage: str = ""
+    timing: str = ""
+    morning: bool = False
+    afternoon: bool = False
+    night: bool = False
+    duration: str = ""
+    instructions: str = ""
+    is_critical: bool = False
+
+class EditMedicinePayload(BaseModel):
+    patient_id: str
+    medicine_index: int
+    name: str
+    dosage: str = ""
+    timing: str = ""
+    morning: bool = False
+    afternoon: bool = False
+    night: bool = False
+    duration: str = ""
+    instructions: str = ""
+    is_critical: bool = False
+
+class DeleteMedicinePayload(BaseModel):
+    patient_id: str
+    medicine_index: int
+
+@router.post("/medicine/add", summary="Doctor adds medicine to patient prescription")
+def add_medicine(payload: AddMedicinePayload, current_user: TokenData = Depends(get_current_user)):
+    users_col = database.get_users()
+    prescriptions_col = database.get_prescriptions()
+    if users_col is None or prescriptions_col is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    # Verify doctor-patient assignment
+    try:
+        patient = users_col.find_one({"_id": ObjectId(payload.patient_id)})
+    except Exception:
+        patient = None
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    if current_user.user_id not in patient.get("assigned_doctors", []):
+        raise HTTPException(status_code=403, detail="Not authorized for this patient")
+
+    med = {
+        "name": payload.name, "dosage": payload.dosage, "timing": payload.timing,
+        "morning": payload.morning, "afternoon": payload.afternoon, "night": payload.night,
+        "duration": payload.duration, "instructions": payload.instructions,
+        "is_critical": payload.is_critical, "added_by_doctor": current_user.user_id,
+        "added_at": datetime.utcnow().isoformat()
+    }
+
+    rx = prescriptions_col.find_one({"user_id": payload.patient_id}, sort=[("created_at", -1)])
+    if rx:
+        prescriptions_col.update_one({"_id": rx["_id"]}, {"$push": {"medicines": med}})
+    else:
+        prescriptions_col.insert_one({
+            "user_id": payload.patient_id, "medicines": [med],
+            "possible_condition": "Doctor Added", "created_at": datetime.utcnow()
+        })
+
+    _log_audit(current_user.user_id, payload.patient_id, "add_medicine", f"Added {payload.name}")
+    return {"message": "Medicine added successfully"}
+
+
+@router.put("/medicine/edit", summary="Doctor edits medicine in patient prescription")
+def edit_medicine(payload: EditMedicinePayload, current_user: TokenData = Depends(get_current_user)):
+    users_col = database.get_users()
+    prescriptions_col = database.get_prescriptions()
+    if users_col is None or prescriptions_col is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    try:
+        patient = users_col.find_one({"_id": ObjectId(payload.patient_id)})
+    except Exception:
+        patient = None
+    if not patient or current_user.user_id not in patient.get("assigned_doctors", []):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    rx = prescriptions_col.find_one({"user_id": payload.patient_id}, sort=[("created_at", -1)])
+    if not rx:
+        raise HTTPException(status_code=404, detail="No prescription found")
+
+    meds = rx.get("medicines", [])
+    if payload.medicine_index >= len(meds):
+        raise HTTPException(status_code=400, detail="Invalid medicine index")
+
+    meds[payload.medicine_index] = {
+        "name": payload.name, "dosage": payload.dosage, "timing": payload.timing,
+        "morning": payload.morning, "afternoon": payload.afternoon, "night": payload.night,
+        "duration": payload.duration, "instructions": payload.instructions,
+        "is_critical": payload.is_critical, "edited_by_doctor": current_user.user_id,
+        "edited_at": datetime.utcnow().isoformat()
+    }
+    prescriptions_col.update_one({"_id": rx["_id"]}, {"$set": {"medicines": meds}})
+    _log_audit(current_user.user_id, payload.patient_id, "edit_medicine", f"Edited {payload.name}")
+    return {"message": "Medicine updated successfully"}
+
+
+@router.delete("/medicine/delete", summary="Doctor removes medicine from patient prescription")
+def delete_medicine(payload: DeleteMedicinePayload, current_user: TokenData = Depends(get_current_user)):
+    users_col = database.get_users()
+    prescriptions_col = database.get_prescriptions()
+    if users_col is None or prescriptions_col is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    try:
+        patient = users_col.find_one({"_id": ObjectId(payload.patient_id)})
+    except Exception:
+        patient = None
+    if not patient or current_user.user_id not in patient.get("assigned_doctors", []):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    rx = prescriptions_col.find_one({"user_id": payload.patient_id}, sort=[("created_at", -1)])
+    if not rx:
+        raise HTTPException(status_code=404, detail="No prescription found")
+
+    meds = rx.get("medicines", [])
+    if payload.medicine_index >= len(meds):
+        raise HTTPException(status_code=400, detail="Invalid medicine index")
+
+    removed = meds.pop(payload.medicine_index)
+    prescriptions_col.update_one({"_id": rx["_id"]}, {"$set": {"medicines": meds}})
+    _log_audit(current_user.user_id, payload.patient_id, "delete_medicine", f"Removed {removed.get('name','?')}")
+    return {"message": "Medicine removed successfully"}
+
+
+# ─── Clinical Notes ───────────────────────────────────────────────────────────
+
+class ClinicalNotePayload(BaseModel):
+    patient_id: str
+    note: str
+    is_private: bool = True
+
+@router.post("/notes/add", summary="Doctor adds a private clinical note")
+def add_clinical_note(payload: ClinicalNotePayload, current_user: TokenData = Depends(get_current_user)):
+    users_col = database.get_users()
+    if users_col is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    try:
+        patient = users_col.find_one({"_id": ObjectId(payload.patient_id)})
+    except Exception:
+        patient = None
+    if not patient or current_user.user_id not in patient.get("assigned_doctors", []):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    notes_col = database._db["clinical_notes"] if database._db is not None else None
+    if notes_col is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    notes_col.insert_one({
+        "doctor_id": current_user.user_id,
+        "patient_id": payload.patient_id,
+        "note": payload.note,
+        "is_private": payload.is_private,
+        "timestamp": datetime.utcnow()
+    })
+    _log_audit(current_user.user_id, payload.patient_id, "add_note", "Added clinical note")
+    return {"message": "Note saved"}
+
+@router.get("/notes/{patient_id}", summary="Doctor fetches clinical notes for a patient")
+def get_clinical_notes(patient_id: str, current_user: TokenData = Depends(get_current_user)):
+    users_col = database.get_users()
+    if users_col is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    try:
+        patient = users_col.find_one({"_id": ObjectId(patient_id)})
+    except Exception:
+        patient = None
+    if not patient or current_user.user_id not in patient.get("assigned_doctors", []):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    notes_col = database._db["clinical_notes"] if database._db is not None else None
+    notes = []
+    if notes_col is not None:
+        cursor = notes_col.find(
+            {"doctor_id": current_user.user_id, "patient_id": patient_id},
+            sort=[("timestamp", -1)]
+        )
+        for n in cursor:
+            notes.append({
+                "id": str(n["_id"]),
+                "note": n.get("note", ""),
+                "is_private": n.get("is_private", True),
+                "timestamp": n.get("timestamp", datetime.utcnow()).isoformat()
+            })
+    return {"notes": notes}
+
+
+# ─── Follow-up Reminders ──────────────────────────────────────────────────────
+
+class FollowUpPayload(BaseModel):
+    patient_id: str
+    note: str
+    follow_up_date: str  # ISO format date string
+
+@router.post("/followup/add", summary="Doctor schedules a follow-up for a patient")
+def add_followup(payload: FollowUpPayload, current_user: TokenData = Depends(get_current_user)):
+    users_col = database.get_users()
+    if users_col is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    try:
+        patient = users_col.find_one({"_id": ObjectId(payload.patient_id)})
+    except Exception:
+        patient = None
+    if not patient or current_user.user_id not in patient.get("assigned_doctors", []):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    followups_col = database._db["followups"] if database._db is not None else None
+    if followups_col is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    followups_col.insert_one({
+        "doctor_id": current_user.user_id,
+        "patient_id": payload.patient_id,
+        "patient_name": patient.get("name", "Unknown"),
+        "note": payload.note,
+        "follow_up_date": payload.follow_up_date,
+        "status": "pending",
+        "created_at": datetime.utcnow()
+    })
+    return {"message": "Follow-up scheduled"}
+
+@router.get("/followups", summary="Doctor fetches all pending follow-ups")
+def get_followups(current_user: TokenData = Depends(get_current_user)):
+    followups_col = database._db["followups"] if database._db is not None else None
+    if followups_col is None:
+        return {"followups": []}
+
+    cursor = followups_col.find(
+        {"doctor_id": current_user.user_id, "status": "pending"},
+        sort=[("follow_up_date", 1)]
+    )
+    results = []
+    for f in cursor:
+        results.append({
+            "id": str(f["_id"]),
+            "patient_id": f.get("patient_id", ""),
+            "patient_name": f.get("patient_name", "Unknown"),
+            "note": f.get("note", ""),
+            "follow_up_date": f.get("follow_up_date", ""),
+            "status": f.get("status", "pending"),
+        })
+    return {"followups": results}
+
+
+# ─── Doctor Profile Update ────────────────────────────────────────────────────
+
+class DoctorProfileUpdate(BaseModel):
+    specialization: Optional[str] = None
+    clinic_name: Optional[str] = None
+    clinic_address: Optional[str] = None
+    availability_status: Optional[str] = None  # available|busy|emergency_only|offline
+    emergency_available: Optional[bool] = None
+    consultation_timings: Optional[str] = None
+
+@router.put("/profile", summary="Doctor updates their profile and availability")
+def update_doctor_profile(payload: DoctorProfileUpdate, current_user: TokenData = Depends(get_current_user)):
+    users_col = database.get_users()
+    if users_col is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    update_data = {k: v for k, v in payload.dict().items() if v is not None}
+    if not update_data:
+        return {"message": "No changes provided"}
+
+    users_col.update_one(
+        {"_id": ObjectId(current_user.user_id)},
+        {"$set": update_data}
+    )
+    return {"message": "Profile updated successfully"}
+
+@router.get("/profile", summary="Doctor fetches their own profile")
+def get_doctor_profile(current_user: TokenData = Depends(get_current_user)):
+    users_col = database.get_users()
+    if users_col is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    try:
+        doc = users_col.find_one({"_id": ObjectId(current_user.user_id)})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Doctor not found")
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Doctor not found")
+
+    return {
+        "name": doc.get("name", ""),
+        "email": doc.get("email", ""),
+        "patient_id": doc.get("patient_id", ""),
+        "specialization": doc.get("specialization", "General Physician"),
+        "clinic_name": doc.get("clinic_name", ""),
+        "clinic_address": doc.get("clinic_address", ""),
+        "availability_status": doc.get("availability_status", "available"),
+        "emergency_available": doc.get("emergency_available", True),
+        "consultation_timings": doc.get("consultation_timings", "9 AM - 5 PM"),
+        "total_patients": 0,
+    }
+
+
+# ─── Audit Trail ─────────────────────────────────────────────────────────────
+
+def _log_audit(doctor_id: str, patient_id: str, action: str, detail: str = ""):
+    try:
+        audit_col = database._db["audit_logs"]
+        audit_col.insert_one({
+            "doctor_id": doctor_id,
+            "patient_id": patient_id,
+            "action": action,
+            "detail": detail,
+            "timestamp": datetime.utcnow()
+        })
+    except Exception:
+        pass
+
+@router.get("/audit/{patient_id}", summary="Get audit trail for a patient")
+def get_audit_trail(patient_id: str, current_user: TokenData = Depends(get_current_user)):
+    users_col = database.get_users()
+    if users_col is None:
+        return {"logs": []}
+
+    try:
+        patient = users_col.find_one({"_id": ObjectId(patient_id)})
+    except Exception:
+        patient = None
+    if not patient or current_user.user_id not in patient.get("assigned_doctors", []):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    try:
+        audit_col = database._db["audit_logs"]
+        cursor = audit_col.find(
+            {"patient_id": patient_id},
+            sort=[("timestamp", -1)], limit=50
+        )
+        logs = [{"action": l.get("action"), "detail": l.get("detail"), "timestamp": l.get("timestamp", datetime.utcnow()).isoformat()} for l in cursor]
+    except Exception:
+        logs = []
+
+    return {"logs": logs}
+
+
+# ─── Emergency SOS System ─────────────────────────────────────────────────────
+# Routes:
+#   POST /doctor/emergency/trigger  — Patient triggers SOS
+#   GET  /doctor/emergency/status   — Patient polls emergency state
+#   PUT  /doctor/emergency/accept   — Doctor accepts emergency
+#   PUT  /doctor/emergency/resolve  — Doctor resolves emergency
+#   GET  /doctor/emergency/active   — Doctor sees all pending emergencies
+
+from models.schemas import EmergencyCreate, EmergencyOut, EmergencyStatusResponse, EmergencyResolvePayload
+
+def _serialize_emergency(doc: dict) -> EmergencyOut:
+    return EmergencyOut(
+        emergency_id=str(doc["_id"]),
+        user_id=doc["user_id"],
+        status=doc.get("status", "pending"),
+        note=doc.get("note"),
+        location=doc.get("location"),
+        responder_id=doc.get("responder_id"),
+        responder_name=doc.get("responder_name"),
+        created_at=doc["created_at"],
+        updated_at=doc.get("updated_at", doc["created_at"]),
+        resolved_at=doc.get("resolved_at"),
+        retry_count=doc.get("retry_count", 0),
+    )
+
+
+@router.post("/emergency/trigger", summary="Patient triggers SOS emergency")
+def trigger_emergency(
+    payload: EmergencyCreate,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """
+    Patient triggers an emergency SOS. If an active emergency already exists
+    for this patient, increments the retry_count and returns the existing record
+    to prevent duplicate emergencies.
+    """
+    emergencies_col = database.get_emergencies()
+    users_col = database.get_users()
+    if emergencies_col is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+
+    now = datetime.utcnow()
+
+    # Check for existing active emergency (prevent duplicates)
+    existing = emergencies_col.find_one({
+        "user_id": current_user.user_id,
+        "status": {"$in": ["pending", "accepted"]},
+    })
+    if existing:
+        # Increment retry counter and update timestamp
+        emergencies_col.update_one(
+            {"_id": existing["_id"]},
+            {"$inc": {"retry_count": 1}, "$set": {"updated_at": now}},
+        )
+        existing["retry_count"] = existing.get("retry_count", 0) + 1
+        existing["updated_at"] = now
+        logger.info(f"🆘 Emergency retry #{existing['retry_count']} for {current_user.user_id[:8]}")
+        return {
+            "message": "Emergency already active — escalated.",
+            "emergency": _serialize_emergency(existing),
+            "is_duplicate": True,
+        }
+
+    # Create new emergency record
+    patient_name = "Unknown Patient"
+    if users_col:
+        try:
+            u = users_col.find_one({"_id": ObjectId(current_user.user_id)}, {"name": 1})
+            if u:
+                patient_name = u.get("name", "Unknown Patient")
+        except Exception:
+            pass
+
+    doc = {
+        "user_id":      current_user.user_id,
+        "patient_name": patient_name,
+        "status":       "pending",
+        "note":         payload.note,
+        "location":     payload.location,
+        "responder_id":   None,
+        "responder_name": None,
+        "created_at":   now,
+        "updated_at":   now,
+        "resolved_at":  None,
+        "retry_count":  0,
+    }
+    result = emergencies_col.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    emergency_id = str(result.inserted_id)
+
+    logger.info(f"🆘 Emergency triggered by {patient_name} ({current_user.user_id[:8]})")
+
+    # ── Push MAX-priority alert to assigned doctors ────────────────
+    try:
+        from services.push_service import emergency_push
+        if users_col:
+            patient_doc = users_col.find_one(
+                {"_id": ObjectId(current_user.user_id)},
+                {"assigned_doctors": 1},
+            )
+            assigned = patient_doc.get("assigned_doctors", []) if patient_doc else []
+            for doctor_uid in assigned:
+                emergency_push(
+                    doctor_user_id=doctor_uid,
+                    patient_name=patient_name,
+                    emergency_id=emergency_id,
+                    note=payload.note or "",
+                )
+        if not assigned:
+            logger.warning(f"[Emergency] No assigned doctors to push for patient {current_user.user_id[:8]}")
+    except Exception as e:
+        logger.warning(f"[Emergency] FCM push failed (non-fatal): {e}")
+
+    return {
+        "message": "Emergency SOS sent. Help is on the way.",
+        "emergency": _serialize_emergency(doc),
+        "is_duplicate": False,
+    }
+
+
+@router.get("/emergency/status", response_model=EmergencyStatusResponse, summary="Patient polls their emergency status")
+def get_emergency_status(current_user: TokenData = Depends(get_current_user)):
+    """Returns the patient's current active emergency if any."""
+    emergencies_col = database.get_emergencies()
+    if emergencies_col is None:
+        return EmergencyStatusResponse(has_active=False)
+
+    doc = emergencies_col.find_one(
+        {"user_id": current_user.user_id, "status": {"$in": ["pending", "accepted"]}},
+        sort=[("created_at", -1)],
+    )
+    if not doc:
+        return EmergencyStatusResponse(has_active=False)
+
+    return EmergencyStatusResponse(has_active=True, emergency=_serialize_emergency(doc))
+
+
+@router.put("/emergency/accept", summary="Doctor accepts an emergency")
+def accept_emergency(
+    emergency_id: str,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Doctor marks emergency as accepted. Sets responder info."""
+    emergencies_col = database.get_emergencies()
+    users_col = database.get_users()
+    if emergencies_col is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+
+    try:
+        doc = emergencies_col.find_one({"_id": ObjectId(emergency_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid emergency ID.")
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Emergency not found.")
+    if doc["status"] not in ("pending",):
+        raise HTTPException(status_code=400, detail=f"Emergency already in state: {doc['status']}.")
+
+    responder_name = "Doctor"
+    if users_col:
+        try:
+            dr = users_col.find_one({"_id": ObjectId(current_user.user_id)}, {"name": 1})
+            if dr:
+                responder_name = dr.get("name", "Doctor")
+        except Exception:
+            pass
+
+    now = datetime.utcnow()
+    emergencies_col.update_one(
+        {"_id": doc["_id"]},
+        {"$set": {
+            "status":         "accepted",
+            "responder_id":   current_user.user_id,
+            "responder_name": responder_name,
+            "updated_at":     now,
+        }},
+    )
+    logger.info(f"✅ Emergency {emergency_id[:8]} accepted by Dr. {responder_name}")
+    return {"message": "Emergency accepted.", "responder": responder_name}
+
+
+@router.put("/emergency/resolve", summary="Doctor resolves an emergency")
+def resolve_emergency(
+    payload: EmergencyResolvePayload,
+    current_user: TokenData = Depends(get_current_user),
+):
+    """Doctor marks emergency as resolved."""
+    emergencies_col = database.get_emergencies()
+    if emergencies_col is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+
+    try:
+        doc = emergencies_col.find_one({"_id": ObjectId(payload.emergency_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid emergency ID.")
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Emergency not found.")
+
+    now = datetime.utcnow()
+    emergencies_col.update_one(
+        {"_id": doc["_id"]},
+        {"$set": {
+            "status":      "resolved",
+            "resolved_at": now,
+            "updated_at":  now,
+            "resolve_note": payload.note,
+        }},
+    )
+    logger.info(f"✅ Emergency {payload.emergency_id[:8]} resolved")
+    return {"message": "Emergency resolved."}
+
+
+@router.get("/emergency/active", summary="Doctor sees all pending/accepted emergencies for their patients")
+def get_active_emergencies(current_user: TokenData = Depends(get_current_user)):
+    """Returns all active emergencies for patients assigned to this doctor."""
+    emergencies_col = database.get_emergencies()
+    users_col = database.get_users()
+    if emergencies_col is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+
+    assigned_ids = []
+    if users_col:
+        cursor = users_col.find({"assigned_doctors": current_user.user_id}, {"_id": 1})
+        assigned_ids = [str(u["_id"]) for u in cursor]
+
+    if not assigned_ids:
+        return {"emergencies": []}
+
+    docs = list(emergencies_col.find(
+        {"user_id": {"$in": assigned_ids}, "status": {"$in": ["pending", "accepted"]}},
+        sort=[("created_at", -1)],
+    ))
+    return {"emergencies": [_serialize_emergency(d) for d in docs]}

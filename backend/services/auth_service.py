@@ -76,15 +76,17 @@ def decode_access_token(token: str) -> Optional[TokenData]:
     Decode and validate a JWT token.
 
     Returns:
-        TokenData with user_id and email, or None if invalid/expired.
+        TokenData with user_id, email, role, pin_version, or None if invalid/expired.
     """
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("sub")
         email: str = payload.get("email")
+        role: str = payload.get("role")          # present in caretaker JWTs
+        pin_version: int = payload.get("pin_version")  # caretaker session version
         if user_id is None:
             return None
-        return TokenData(user_id=user_id, email=email)
+        return TokenData(user_id=user_id, email=email, role=role, pin_version=pin_version)
     except JWTError as e:
         logger.warning(f"JWT decode failed: {e}")
         return None
@@ -135,3 +137,31 @@ def get_optional_user(
     if credentials is None:
         return None
     return decode_access_token(credentials.credentials)
+
+
+def require_patient(current_user: TokenData = Depends(get_current_user)) -> TokenData:
+    """
+    Dependency that ensures the caller is a PATIENT (not a caretaker or doctor).
+    Use on any patient-mutation endpoint (mark-done, scan, etc.) to prevent
+    caretaker JWTs from writing patient data.
+    """
+    if current_user.role == "caretaker":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Caretaker access is read-only. This action requires patient authentication.",
+        )
+    return current_user
+
+
+def require_doctor(current_user: TokenData = Depends(get_current_user)) -> TokenData:
+    """
+    Dependency that ensures the caller is a DOCTOR.
+    Blocks patient and caretaker JWTs from doctor-only endpoints.
+    """
+    if current_user.role == "caretaker":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Caretaker access is read-only and cannot access doctor controls.",
+        )
+    return current_user
+

@@ -106,7 +106,10 @@ def _ensure_indexes() -> None:
         _db["doctor_chats"].create_index([("user_id", ASCENDING), ("timestamp", ASCENDING)])
         _db["patient_memory"].create_index([("user_id", ASCENDING)], unique=True)
         _db["scan_intelligence"].create_index([("user_id", ASCENDING), ("scanned_at", DESCENDING)])
-        logger.info("📑 MongoDB indexes ensured.")
+        _db["emergencies"].create_index([("user_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)])
+        _db["notifications"].create_index([("user_id", ASCENDING), ("read", ASCENDING), ("created_at", DESCENDING)])
+        _db["notifications"].create_index([("user_id", ASCENDING), ("type", ASCENDING)])
+        logger.info("MongoDB indexes ensured.")
     except Exception as e:
         logger.warning(f"Index creation warning (non-fatal): {e}")
 
@@ -149,6 +152,14 @@ def get_otps() -> Collection | None:
 def get_call_logs() -> Collection | None:
     """Stores logs of AI calls and Caregiver escalations."""
     return _db["call_logs"] if _db is not None else None
+
+def get_emergencies() -> Collection | None:
+    """Stores patient emergency SOS requests with status tracking."""
+    return _db["emergencies"] if _db is not None else None
+
+def get_notifications() -> Collection | None:
+    """Notification inbox — stores all user notifications with read state and analytics."""
+    return _db["notifications"] if _db is not None else None
 
 def ping() -> bool:
     """Live health check — used by /health-check endpoint."""

@@ -12,12 +12,47 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
 // ─── Config ────────────────────────────────────────────────────────────────────
-// Connect to Render Production URL
-export const API_BASE = 'https://medisync-backend-520988526649.asia-south1.run.app';
+const ENV = 'PROD'; // 'DEV', 'STAGING', 'PROD'
+const LOCAL_WIFI_IP = '192.168.1.13'; // Replace with your local IP if testing on physical device
+
+const getApiBase = () => {
+  if (ENV === 'PROD') return 'https://backend-520988526649.asia-south1.run.app';
+  if (ENV === 'STAGING') return 'https://medisync-staging.run.app';
+  if (Platform.OS === 'android') {
+    return Constants.isDevice ? `http://${LOCAL_WIFI_IP}:8000` : 'http://10.0.2.2:8000';
+  }
+  return `http://${LOCAL_WIFI_IP}:8000`;
+};
+
+export const API_BASE = getApiBase();
+console.log(`[Network] Environment: ${ENV}, API_BASE: ${API_BASE}`);
 
 const TOKEN_KEY = 'medisync_token';
-const USER_KEY  = 'medisync_user';
-const ROLE_KEY  = 'medisync_ui_role';
+const USER_KEY = 'medisync_user';
+const ROLE_KEY = 'medisync_ui_role';
+
+// ─── Network Utilities ────────────────────────────────────────────────────────
+const FETCH_TIMEOUT_MS = 15000;
+const MAX_RETRIES = 2;
+
+let globalLogoutHandler = null;
+export function setGlobalLogoutHandler(handler) {
+  globalLogoutHandler = handler;
+}
+
+async function fetchWithTimeout(resource, options) {
+  const { timeout = FETCH_TIMEOUT_MS } = options;
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  try {
+    const response = await fetch(resource, { ...options, signal: controller.signal });
+    clearTimeout(id);
+    return response;
+  } catch (error) {
+    clearTimeout(id);
+    throw error;
+  }
+}
 
 // ─── Token & User Helpers ──────────────────────────────────────────────────────
 
@@ -54,7 +89,7 @@ export async function getUiRole() {
 
 // ─── Base Fetch ────────────────────────────────────────────────────────────────
 
-async function apiFetch(path, options = {}, authenticated = true) {
+async function apiFetch(path, options = {}, authenticated = true, retries = MAX_RETRIES) {
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
 
   if (authenticated) {
@@ -67,22 +102,53 @@ async function apiFetch(path, options = {}, authenticated = true) {
     delete headers['Content-Type'];
   }
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const url = `${API_BASE}${path}`;
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `Request failed (${res.status})`);
+  try {
+    const res = await fetchWithTimeout(url, { ...options, headers });
+
+    if (!res.ok) {
+      if (res.status === 401 && authenticated) {
+        console.warn(`[API Auth Error] Unauthorized access at ${path}. Token may be expired.`);
+        if (globalLogoutHandler) {
+          globalLogoutHandler();
+        }
+      }
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Request failed (${res.status})`);
+    }
+
+    return await res.json();
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      console.error(`[API Timeout] ${path}`);
+      throw new Error('Request timed out. Please check your connection.');
+    }
+
+    // Retry logic for network failures on idempotent requests
+    const isIdempotent = !options.method || options.method === 'GET';
+    if (retries > 0 && isIdempotent) {
+      console.warn(`[API Retry] Retrying ${path} (${retries} left)...`);
+      await new Promise(res => setTimeout(res, 1000));
+      return apiFetch(path, options, authenticated, retries - 1);
+    }
+
+    console.error(`[API Error] ${path}:`, error.message);
+    throw error;
   }
-
-  return res.json();
 }
 
 // ─── Auth ──────────────────────────────────────────────────────────────────────
 
-export async function apiRegister(name, email, password, role = 'patient') {
+export async function apiRegister(name, email, password, role = 'patient', phone = null, specialization = null, verifyPhoneNow = false) {
   return apiFetch('/auth/register', {
     method: 'POST',
-    body: JSON.stringify({ name, email, password, role }),
+    body: JSON.stringify({
+      name, email, password, role,
+      phone: phone || undefined,
+      specialization: specialization || undefined,
+      verify_phone_now: verifyPhoneNow,
+    }),
   }, false);
 }
 
@@ -102,6 +168,92 @@ export async function apiPatientLogin(patient_id) {
   }, false);
   await setToken(data.access_token);
   return data;
+}
+
+export async function apiCaretakerLogin(patient_id, caretaker_pin) {
+  const data = await apiFetch('/auth/caretaker-login', {
+    method: 'POST',
+    body: JSON.stringify({ patient_id, caretaker_pin }),
+  }, false);
+  await setToken(data.access_token);
+  // Store caretaker context so dashboard can show patient info
+  await AsyncStorage.setItem('medisync_caretaker_ctx', JSON.stringify({
+    linked_patient_id: data.linked_patient_id,
+    patient_name:      data.patient_name,
+    expires_in:        data.expires_in,
+    logged_at:         Date.now(),
+  }));
+  return data;
+}
+
+/** Request a password reset code via email (no auth required) */
+export async function apiForgotPassword(email) {
+  return apiFetch('/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  }, false);
+}
+
+/** Submit reset code + new password (no auth required) */
+export async function apiResetPassword(email, reset_code, new_password) {
+  return apiFetch('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ email, reset_code, new_password }),
+  }, false);
+}
+
+/** Session metadata for the current logged-in user */
+export async function apiGetSessionInfo() {
+  return apiFetch('/auth/me/session');
+}
+
+/** Send OTP to phone number (requires auth) */
+export async function apiSendOTP(phone_number) {
+  return apiFetch('/phone/send-otp', {
+    method: 'POST',
+    body: JSON.stringify({ phone_number }),
+  });
+}
+
+/** Verify OTP code for phone (requires auth) */
+export async function apiVerifyOTP(phone_number, otp_code) {
+  return apiFetch('/phone/verify-otp', {
+    method: 'POST',
+    body: JSON.stringify({ phone_number, otp_code }),
+  });
+}
+
+export async function apiSetCaretakerPin(caretaker_pin, caretaker_name) {
+  return apiFetch('/auth/set-caretaker-pin', {
+    method: 'PUT',
+    body: JSON.stringify({ caretaker_pin, caretaker_name }),
+  });
+}
+
+/** Auto-generate a secure 6-digit PIN. Returns plain PIN ONCE — never stored. */
+export async function apiGenerateCaretakerPin(caretaker_name, relationship) {
+  return apiFetch('/auth/caretaker/generate-pin', {
+    method: 'POST',
+    body: JSON.stringify({ caretaker_name, relationship }),
+  });
+}
+
+/** Get current caretaker access status for the settings screen. */
+export async function apiGetCaretakerStatus() {
+  return apiFetch('/auth/caretaker/status');
+}
+
+/** Fully revoke caretaker access — deletes PIN and invalidates all active sessions. */
+export async function apiRevokeCaretakerAccess() {
+  return apiFetch('/auth/caretaker/revoke', { method: 'DELETE' });
+}
+
+/** Toggle caretaker access on/off without regenerating the PIN. */
+export async function apiToggleCaretakerAccess(enabled) {
+  return apiFetch('/auth/caretaker/toggle', {
+    method: 'PATCH',
+    body: JSON.stringify({ enabled }),
+  });
 }
 
 // ─── User ──────────────────────────────────────────────────────────────────────
@@ -130,6 +282,7 @@ export async function apiUpdateCaregiver(data) {
     body: JSON.stringify(data),
   });
 }
+
 
 export async function apiGetPrescriptions(limit = 20, skip = 0) {
   return apiFetch(`/user-prescriptions?limit=${limit}&skip=${skip}`);
@@ -247,6 +400,13 @@ export async function apiGetDoctorMessages(limit = 50, skip = 0) {
   return apiFetch(`/doctor/messages?limit=${limit}&skip=${skip}`);
 }
 
+export async function apiBroadcastAlert(message, severity) {
+  return apiFetch('/doctor/broadcast', {
+    method: 'POST',
+    body: JSON.stringify({ message, severity }),
+  });
+}
+
 // ─── Doctor Panel ──────────────────────────────────────────────────────────────
 
 export async function apiGetDoctorPatients() {
@@ -265,6 +425,19 @@ export async function apiDoctorSendReply(patient_id, message) {
   return apiFetch('/doctor/reply', {
     method: 'POST',
     body: JSON.stringify({ patient_id, message }),
+  });
+}
+
+/** Doctor fetches a specific patient's full chat thread */
+export async function apiDoctorGetPatientThread(patient_id) {
+  return apiFetch(`/doctor/patient-thread/${patient_id}`);
+}
+
+/** Doctor marks all patient messages in a thread as seen */
+export async function apiMarkDoctorMessagesSeen(patient_id) {
+  return apiFetch('/doctor/mark-seen', {
+    method: 'POST',
+    body: JSON.stringify({ patient_id }),
   });
 }
 
@@ -342,3 +515,175 @@ export async function apiVerifyOtp(phone_number, otp_code) {
   });
 }
 
+// ─── Doctor Dashboard ──────────────────────────────────────────────────────────
+
+export async function apiGetDoctorDashboard() {
+  return apiFetch('/doctor/dashboard');
+}
+
+// ─── Doctor Profile ────────────────────────────────────────────────────────────
+
+export async function apiGetDoctorProfile() {
+  return apiFetch('/doctor/profile');
+}
+
+export async function apiUpdateDoctorProfile(data) {
+  return apiFetch('/doctor/profile', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+// ─── Medicine Management ───────────────────────────────────────────────────────
+
+export async function apiAddMedicine(medicineData) {
+  return apiFetch('/doctor/medicine/add', {
+    method: 'POST',
+    body: JSON.stringify(medicineData),
+  });
+}
+
+export async function apiEditMedicine(medicineData) {
+  return apiFetch('/doctor/medicine/edit', {
+    method: 'PUT',
+    body: JSON.stringify(medicineData),
+  });
+}
+
+export async function apiDeleteMedicine(patient_id, medicine_index) {
+  return apiFetch('/doctor/medicine/delete', {
+    method: 'DELETE',
+    body: JSON.stringify({ patient_id, medicine_index }),
+  });
+}
+
+// ─── Clinical Notes ────────────────────────────────────────────────────────────
+
+export async function apiAddClinicalNote(patient_id, note, is_private = true) {
+  return apiFetch('/doctor/notes/add', {
+    method: 'POST',
+    body: JSON.stringify({ patient_id, note, is_private }),
+  });
+}
+
+export async function apiGetClinicalNotes(patient_id) {
+  return apiFetch(`/doctor/notes/${patient_id}`);
+}
+
+// ─── Follow-up Reminders ───────────────────────────────────────────────────────
+
+export async function apiAddFollowUp(patient_id, note, follow_up_date) {
+  return apiFetch('/doctor/followup/add', {
+    method: 'POST',
+    body: JSON.stringify({ patient_id, note, follow_up_date }),
+  });
+}
+
+export async function apiGetFollowUps() {
+  return apiFetch('/doctor/followups');
+}
+
+// ─── Audit Trail ───────────────────────────────────────────────────────────────
+
+export async function apiGetAuditTrail(patient_id) {
+  return apiFetch(`/doctor/audit/${patient_id}`);
+}
+
+// ─── Emergency SOS ─────────────────────────────────────────────────────────────
+
+export async function apiTriggerEmergency(note = '', location = null) {
+  return apiFetch('/doctor/emergency/trigger', {
+    method: 'POST',
+    body: JSON.stringify({ note, location }),
+  });
+}
+
+export async function apiGetEmergencyStatus() {
+  return apiFetch('/doctor/emergency/status');
+}
+
+/** Patient/Caretaker emergency status — uses /doctor/emergency/status */
+export async function apiGetPatientEmergencyStatus() {
+  return apiFetch('/doctor/emergency/status');
+}
+
+export async function apiResolveEmergency(emergency_id, note = '') {
+  return apiFetch('/doctor/emergency/resolve', {
+    method: 'PUT',
+    body: JSON.stringify({ emergency_id, note }),
+  });
+}
+
+// ─── Patient Medicine Delete ────────────────────────────────────────────────────
+
+export async function apiPatientDeleteMedicine(rx_id, med_index) {
+  return apiFetch(`/prescription/${rx_id}/medicine/${med_index}`, {
+    method: 'DELETE',
+  });
+}
+
+// ─── Notifications ─────────────────────────────────────────────────────────────
+
+/** Register FCM device token with backend */
+export async function apiRegisterFCMToken(token, deviceId = '', platform = 'android') {
+  return apiFetch('/notifications/fcm-token', {
+    method: 'POST',
+    body: JSON.stringify({ token, device_id: deviceId, platform }),
+  });
+}
+
+/** Fetch notification inbox */
+export async function apiGetNotifications(limit = 50, skip = 0, type = null, unreadOnly = false) {
+  const params = new URLSearchParams({ limit, skip, unread_only: unreadOnly });
+  if (type) params.set('notif_type', type);
+  return apiFetch(`/notifications?${params}`);
+}
+
+/** Get unread notification count (for badges) */
+export async function apiGetUnreadNotificationCount() {
+  return apiFetch('/notifications/unread-count');
+}
+
+/** Mark notifications as read */
+export async function apiMarkNotificationsRead(ids = [], markAll = false) {
+  return apiFetch('/notifications/mark-read', {
+    method: 'POST',
+    body: JSON.stringify({ ids, mark_all: markAll }),
+  });
+}
+
+/** Record notification analytics event */
+export async function apiNotificationAnalytics(notificationId, event) {
+  return apiFetch(`/notifications/analytics/${notificationId}?event=${event}`, {
+    method: 'POST',
+  });
+}
+
+/** Get notification preferences */
+export async function apiGetNotificationPreferences() {
+  return apiFetch('/notifications/preferences');
+}
+
+/** Update notification preferences */
+export async function apiUpdateNotificationPreferences(prefs) {
+  return apiFetch('/notifications/preferences', {
+    method: 'PUT',
+    body: JSON.stringify(prefs),
+  });
+}
+
+/** Mark a dose as taken (quick action from notification) */
+export async function apiMarkDoseTaken(med_id, slot = '') {
+  return apiFetch('/tracking/mark-done', {
+    method: 'POST',
+    body: JSON.stringify({ med_id, slot, status: 'taken' }),
+  });
+}
+
+/** Mark a dose as skipped (quick action from notification) */
+export async function apiMarkDoseSkipped(med_id, slot = '') {
+  return apiFetch('/tracking/mark-done', {
+    method: 'POST',
+    body: JSON.stringify({ med_id, slot, status: 'skipped' }),
+  });
+}

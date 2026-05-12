@@ -43,6 +43,7 @@
       "package": "com.medisync.app"
     },
     "plugins": [
+      "@react-native-firebase/app",
       [
         "expo-image-picker",
         {

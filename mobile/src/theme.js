@@ -33,10 +33,12 @@ export const COLORS = {
   // Amber (Warning)
   amber50:  '#fffbeb',
   amber100: '#fef3c7',
+  amber200: '#fde68a',
   amber400: '#fbbf24',
   amber500: '#f59e0b',
   amber600: '#d97706',
   amber700: '#b45309',
+  amber800: '#92400e',
 
   // Red (Error / Danger)
   red50:  '#fef2f2',
@@ -66,13 +68,14 @@ export const COLORS = {
   transparent: 'transparent',
 
   // Backgrounds
-  bgLight:   '#FAFAFA',
+  bgLight:   '#F7F9FC',
   bgDoctor:  '#FAFAFA',
 
   // Borders
-  border:    '#E5E7EB',
+  border:      '#E5E7EB',
   borderLight: '#F3F4F6',
 };
+
 
 // ─── Typography ────────────────────────────────────────────────────────────────
 export const FONTS = {
@@ -223,10 +226,10 @@ export const S = StyleSheet.create({
     marginTop: 2,
   },
 
-  // Screen — clean white base
   screen: { flex: 1, backgroundColor: COLORS.bgLight },
   screenDoctor: { flex: 1, backgroundColor: COLORS.bgLight },
-  scrollContent: { padding: SPACING.lg, paddingBottom: 60 },
+  scrollContent: { padding: SPACING.lg, paddingBottom: 110 },
+
 
   // Flex helpers
   row: { flexDirection: 'row', alignItems: 'center' },

@@ -29,15 +29,18 @@ import logging
 import uvicorn
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import time
+import traceback
 
 # Internal Modules 
 from db import database
 from services.scheduler import start_scheduler, stop_scheduler
 
 # Routers 
-from routers import auth, scan, tracking, user, chat, voice, doctor, voice_chat, phone
+from routers import auth, scan, tracking, user, chat, voice, doctor, voice_chat, phone, notifications
 
 # Logging Setup 
 logging.basicConfig(
@@ -54,7 +57,7 @@ logger = logging.getLogger("Medisync")
 async def lifespan(app: FastAPI):
     """
     FastAPI lifespan context manager:
-      Startup  → Connect to MongoDB, start background scheduler
+      Startup  → Connect to MongoDB, start background scheduler, init Firebase
       Shutdown → Gracefully stop scheduler
     """
     logger.info("Medisync API starting up...")
@@ -64,6 +67,10 @@ async def lifespan(app: FastAPI):
 
     # 2. Start background reminder scheduler (every 30 min)
     start_scheduler()
+
+    # 3. Initialize Firebase Admin SDK (FCM v1 push notifications)
+    from services.firebase_service import initialize_firebase
+    initialize_firebase()
 
     logger.info("Medisync API is ready.")
     yield   # ← app runs here
@@ -99,6 +106,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Exception Handler Middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.time()
+    try:
+        response = await call_next(request)
+        process_time = time.time() - start_time
+        logger.info(
+            f"{request.method} {request.url.path} - "
+            f"Status: {response.status_code} - "
+            f"Duration: {process_time:.3f}s"
+        )
+        return response
+    except Exception as exc:
+        process_time = time.time() - start_time
+        logger.error(
+            f"API CRASH: {request.method} {request.url.path} - "
+            f"Duration: {process_time:.3f}s - Error: {str(exc)}"
+        )
+        logger.error(traceback.format_exc())
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal Server Error", "type": str(type(exc))}
+        )
+
 #  Mount Routers 
 
 app.include_router(auth.router)       # /auth/register, /auth/login
@@ -110,6 +142,7 @@ app.include_router(doctor.router)     # /doctor/message, /doctor/messages
 app.include_router(voice.router)      # /voice-reminder, /notify
 app.include_router(voice_chat.router) # /voice-chat/stream
 app.include_router(phone.router)      # /phone/send-otp, /phone/verify-otp
+app.include_router(notifications.router) # /notifications/*
 
 
 # Health Check 
