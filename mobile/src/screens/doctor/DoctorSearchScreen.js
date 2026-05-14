@@ -104,14 +104,22 @@ export default function DoctorSearchScreen({ navigation }) {
       {/* Search Bar */}
       <View style={styles.searchBar}>
         <Ionicons name="search" size={20} color={COLORS.slate400} style={{ marginRight: 8 }} />
+        {/* ✅ Fix: Lock "P-" prefix — user only types the number part */}
+        <Text style={{ fontSize: FONTS.base, color: COLORS.brand700, fontWeight: '800', letterSpacing: 0.5 }}>P-</Text>
         <TextInput
           style={styles.searchInput}
           value={query}
-          onChangeText={setQuery}
-          onSubmitEditing={() => doSearch(query)}
-          placeholder="Search by name or patient ID..."
+          onChangeText={(text) => {
+            // Only allow digits after P-
+            const nums = text.replace(/[^0-9]/g, '');
+            setQuery(nums);
+            if (nums.length >= 3) doSearch('P-' + nums);
+            else if (nums.length === 0) doSearch('');
+          }}
+          onSubmitEditing={() => doSearch(query ? 'P-' + query : '')}
+          placeholder="Type ID numbers..."
           placeholderTextColor={COLORS.slate400}
-          autoCapitalize="none"
+          keyboardType="number-pad"
           returnKeyType="search"
         />
         {query.length > 0 && (

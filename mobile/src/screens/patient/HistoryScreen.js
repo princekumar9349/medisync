@@ -444,7 +444,7 @@ export default function HistoryScreen() {
             <View style={[styles.qaIcon, { backgroundColor: COLORS.brand50 }]}><Ionicons name="scan" size={20} color={COLORS.brand600} /></View>
             <Text style={styles.qaLabel}>Scan Rx</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.qaBtn} onPress={handleSOS}>
+          <TouchableOpacity style={styles.qaBtn} onPress={() => navigation.navigate('Emergency')}>
             <View style={[styles.qaIcon, { backgroundColor: COLORS.red50 }]}><Ionicons name="warning" size={20} color={COLORS.red600} /></View>
             <Text style={styles.qaLabel}>Emergency</Text>
           </TouchableOpacity>

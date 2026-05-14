@@ -366,3 +366,40 @@ def record_analytics(
     except Exception:
         pass
     return {"recorded": True}
+
+
+@router.post("/test-push", summary="Send a test FCM push to yourself (diagnostic)")
+def send_test_push(current_user: TokenData = Depends(get_current_user)):
+    """
+    Sends a real FCM push notification to ALL devices registered for the calling user.
+    Used by the Notification Diagnostics screen to test the full backend → FCM → device pipeline.
+    """
+    try:
+        from services.push_service import send_push_notification
+        result = send_push_notification(
+            user_id=current_user.user_id,
+            title="✅ MediSync Push Test",
+            body="Full pipeline test successful! Server → FCM → Device is working.",
+            data={
+                "type": "system",
+                "action_route": "NotificationDebug",
+                "test": "true",
+            },
+            channel_id="system",
+            android_priority="high",
+        )
+        # Also persist in inbox
+        push_notification_to_user(
+            user_id=current_user.user_id,
+            notif_type="system",
+            severity="low",
+            title="✅ Notification Test",
+            body="Your notification pipeline is working correctly.",
+            action_route="NotificationDebug",
+            push=False,  # Already sent above
+        )
+        logger.info(f"[TestPush] Sent to user {current_user.user_id[:8]} → result: {result}")
+        return {"message": "✅ Test push sent! It should arrive in a few seconds.", "result": result}
+    except Exception as e:
+        logger.error(f"[TestPush] Failed for user {current_user.user_id[:8]}: {e}")
+        raise HTTPException(status_code=500, detail=f"Push failed: {str(e)}")

@@ -158,10 +158,15 @@ function AIPane({ lang }) {
         lang === 'hi' ? 'माफ करें, अभी जवाब देना संभव नहीं है।' : "Sorry, I couldn't generate a response right now."
       );
       setMsgs(p => [...p, { id: `a${uid.current++}`, role: 'ai', ts: new Date().toISOString(), text: reply }]);
-    } catch {
+    } catch (err) {
+      console.error('[ChatScreen] apiChat error:', err?.message || err);
+      const errMsg = err?.message?.includes('timed out')
+        ? (lang === 'hi' ? 'सर्वर से कनेक्शन टाइम आउट हुआ। कृपया इंटरनेट जांचें।' : 'Connection timed out. Please check your internet.')
+        : err?.message?.includes('401')
+        ? (lang === 'hi' ? 'सत्र समाप्त हो गया। कृपया दोबारा लॉगिन करें।' : 'Session expired. Please log in again.')
+        : (lang === 'hi' ? 'एक त्रुटि हुई: ' + (err?.message || 'अज्ञात') : 'Error: ' + (err?.message || 'Unknown error. Please retry.'));
       setMsgs(p => [...p, {
-        id: `e${uid.current++}`, role: 'ai', ts: new Date().toISOString(),
-        text: lang === 'hi' ? 'एक त्रुटि हुई। कृपया पुनः प्रयास करें।' : 'Something went wrong. Please try again in a moment.',
+        id: `e${uid.current++}`, role: 'ai', ts: new Date().toISOString(), text: errMsg,
       }]);
     } finally { setBusy(false); }
   }
@@ -342,23 +347,23 @@ export default function ChatScreen({ route, navigation }) {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const sty = StyleSheet.create({
   tabs:    { flexDirection: 'row', backgroundColor: COLORS.white, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  tab:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tab:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 13, borderBottomWidth: 2.5, borderBottomColor: 'transparent' },
   tabOn:   { borderBottomColor: COLORS.brand600 },
   tabLbl:  { fontSize: FONTS.sm, fontWeight: FONTS.medium, color: COLORS.slate400 },
   tabLblOn:{ color: COLORS.brand600, fontWeight: FONTS.bold },
 
-  list:    { flex: 1, backgroundColor: '#F7F9FC' },
+  list:    { flex: 1, backgroundColor: '#F0F4F8' },
   row:     { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   rowUser: { justifyContent: 'flex-end' },
 
-  avatar:    { width: 30, height: 30, borderRadius: 15, backgroundColor: COLORS.brand50, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.brand200 },
+  avatar:    { width: 32, height: 32, borderRadius: 16, backgroundColor: COLORS.brand100, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: COLORS.brand300 },
   avatarDoc: { backgroundColor: COLORS.brand600, borderColor: COLORS.brand700 },
   senderLbl: { fontSize: 10, fontWeight: FONTS.bold, color: COLORS.slate400, marginBottom: 3, marginLeft: 2 },
 
-  bubble: { borderRadius: 18, paddingHorizontal: 14, paddingVertical: 10, maxWidth: '100%' },
+  bubble: { borderRadius: 20, paddingHorizontal: 15, paddingVertical: 11, maxWidth: '100%' },
   bUser:  { backgroundColor: COLORS.brand600, borderBottomRightRadius: 4 },
   bDoc:   { backgroundColor: COLORS.brand700, borderBottomLeftRadius: 4 },
-  bAI:    { backgroundColor: COLORS.white, borderBottomLeftRadius: 4, borderWidth: 1, borderColor: COLORS.border },
+  bAI:    { backgroundColor: COLORS.white, borderBottomLeftRadius: 4, borderWidth: 1, borderColor: COLORS.border, ...Platform.select({ android: { elevation: 2 }, ios: { shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } } }) },
   bTxt:   { fontSize: FONTS.base, color: COLORS.slate800, lineHeight: 22 },
 
   alertCard:  { backgroundColor: COLORS.red50, borderWidth: 1.5, borderColor: COLORS.red200, borderRadius: RADIUS.lg, padding: SPACING.lg, marginBottom: SPACING.md },
@@ -371,17 +376,18 @@ const sty = StyleSheet.create({
 
   typingRow: { flexDirection: 'row', alignItems: 'center', gap: 5, padding: 6 },
   dot:       { width: 7, height: 7, borderRadius: 4, backgroundColor: COLORS.brand400 },
-  speaker:   { width: 26, height: 26, borderRadius: 13, backgroundColor: COLORS.slate100, alignItems: 'center', justifyContent: 'center' },
+  speaker:   { width: 28, height: 28, borderRadius: 14, backgroundColor: COLORS.slate100, alignItems: 'center', justifyContent: 'center' },
   tsLbl:     { fontSize: 10, color: COLORS.slate400 },
 
-  bar:     { flexDirection: 'row', alignItems: 'flex-end', gap: 10, padding: SPACING.lg, paddingBottom: Platform.OS === 'ios' ? 28 : 80, backgroundColor: COLORS.white, borderTopWidth: 1, borderTopColor: COLORS.border },
-  inp:     { flex: 1, backgroundColor: '#F7F9FC', borderWidth: 1, borderColor: COLORS.border, borderRadius: 22, paddingHorizontal: 16, paddingVertical: Platform.OS === 'ios' ? 12 : 10, fontSize: FONTS.base, color: COLORS.slate800, maxHeight: 100 },
-  sendBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.brand600, alignItems: 'center', justifyContent: 'center' },
+  // ✅ Fix: paddingBottom 12 so bar sits just above tab navigator (not 80 — which was too high)
+  bar:     { flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: SPACING.lg, paddingTop: SPACING.md, paddingBottom: Platform.OS === 'ios' ? 28 : 12, backgroundColor: COLORS.white, borderTopWidth: 1, borderTopColor: COLORS.border },
+  inp:     { flex: 1, backgroundColor: '#F7F9FC', borderWidth: 1.5, borderColor: COLORS.border, borderRadius: 24, paddingHorizontal: 16, paddingVertical: Platform.OS === 'ios' ? 12 : 10, fontSize: FONTS.base, color: COLORS.slate800, maxHeight: 100 },
+  sendBtn: { width: 46, height: 46, borderRadius: 23, backgroundColor: COLORS.brand600, alignItems: 'center', justifyContent: 'center' },
 
-  quick:    { backgroundColor: COLORS.brand50, borderWidth: 1, borderColor: COLORS.brand200, borderRadius: RADIUS.full, paddingHorizontal: 14, paddingVertical: 8, marginRight: 8 },
-  quickTxt: { fontSize: FONTS.sm, color: COLORS.brand700, fontWeight: FONTS.medium },
+  quick:    { backgroundColor: COLORS.brand50, borderWidth: 1.5, borderColor: COLORS.brand200, borderRadius: RADIUS.full, paddingHorizontal: 14, paddingVertical: 9, marginRight: 8 },
+  quickTxt: { fontSize: FONTS.sm, color: COLORS.brand700, fontWeight: FONTS.semibold },
 
-  secureBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 7, backgroundColor: COLORS.emerald50, borderBottomWidth: 1, borderBottomColor: COLORS.emerald100 },
+  secureBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, backgroundColor: '#F0FDF4', borderBottomWidth: 1, borderBottomColor: '#BBF7D0' },
   secureDot:    { width: 7, height: 7, borderRadius: 4, backgroundColor: COLORS.emerald500 },
   secureText:   { fontSize: FONTS.xs, color: COLORS.emerald700, fontWeight: FONTS.semibold },
 
@@ -393,3 +399,4 @@ const sty = StyleSheet.create({
   emptyTitle: { fontSize: FONTS.lg, fontWeight: FONTS.bold, color: COLORS.slate800, marginBottom: 6 },
   emptyDesc:  { fontSize: FONTS.sm, color: COLORS.slate500, textAlign: 'center', maxWidth: 260, lineHeight: 20 },
 });
+

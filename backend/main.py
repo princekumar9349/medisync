@@ -42,6 +42,7 @@ from workers.scheduler import start_scheduler, stop_scheduler
 from api import auth, scan, tracking, user, chat, voice, doctor, voice_chat, phone, notifications
 from api.health import router as health_router
 from analytics.api.routes import router as analytics_router
+from api.esp_device import router as esp_router       # IoT/ESP8266
 
 #  Step 1: Validate env before anything else 
 # Crash-fast in production if required vars are missing.
@@ -182,6 +183,7 @@ app.include_router(voice_chat.router)   # /voice-chat/stream
 app.include_router(phone.router)        # /phone/*
 app.include_router(notifications.router)
 app.include_router(analytics_router)    # /analytics/*
+app.include_router(esp_router)          # /device/* (ESP8266 IoT)
 
 
 @app.get("/", tags=["System"], summary="API root")

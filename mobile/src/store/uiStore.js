@@ -12,6 +12,9 @@ export const useUIStore = create(
       setTheme: (theme) => set({ theme }),
       toggleElderlyMode: () => set((state) => ({ isElderlyMode: !state.isElderlyMode })),
       toggleHighContrast: () => set((state) => ({ isHighContrast: !state.isHighContrast })),
+      // ✅ Fix: explicit setters used by ProfileScreen toggles
+      setElderlyMode: (val) => set({ isElderlyMode: val }),
+      setHighContrast: (val) => set({ isHighContrast: val }),
     }),
     {
       name: 'medisync-ui-storage',

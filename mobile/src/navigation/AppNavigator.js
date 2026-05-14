@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { useAuth } from '../context/AuthContext';
 import { useUIStore } from '../store/uiStore';
+import { useAppTheme } from '../context/AppThemeContext';
 import { COLORS, FONTS, SHADOW } from '../theme';
 
 // Auth screens
@@ -37,6 +38,7 @@ import NotificationDiagnosticsScreen from '../screens/patient/NotificationDiagno
 import AnalyticsDashboardScreen     from '../screens/patient/AnalyticsDashboardScreen';
 import DataPrivacySettingsScreen    from '../screens/patient/DataPrivacySettingsScreen';
 import PrivacyPolicyScreen          from '../screens/patient/PrivacyPolicyScreen';
+import EmergencyScreen              from '../screens/patient/EmergencyScreen';
 
 // Doctor screens
 import DoctorDashboardScreen     from '../screens/doctor/DoctorDashboardScreen';
@@ -216,15 +218,23 @@ function LoadingScreen() {
 function PatientStackNav() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="PatientTabs"         component={PatientTabs} />
-      <Stack.Screen name="Results"             component={ResultsScreen} />
-      <Stack.Screen name="OCRReview"           component={OCRReviewScreen} />
-      <Stack.Screen name="SymptomReport"       component={SymptomReportScreen} />
-      <Stack.Screen name="CallingSettings"     component={CallingSettingsScreen} />
-      <Stack.Screen name="CaretakerSettings"   component={CaretakerSettingsScreen} />
-      <Stack.Screen name="NotificationCenter"  component={NotificationCenterScreen} />
-      <Stack.Screen name="NotificationDebug"   component={NotificationDiagnosticsScreen} />
-      <Stack.Screen name="PhoneVerify"         component={PhoneVerifyScreen} />
+      <Stack.Screen name="PatientTabs"           component={PatientTabs} />
+      <Stack.Screen name="Results"               component={ResultsScreen} />
+      <Stack.Screen name="OCRReview"             component={OCRReviewScreen} />
+      <Stack.Screen name="SymptomReport"         component={SymptomReportScreen} />
+      <Stack.Screen name="CallingSettings"       component={CallingSettingsScreen} />
+      <Stack.Screen name="CaretakerSettings"     component={CaretakerSettingsScreen} />
+      <Stack.Screen name="NotificationCenter"    component={NotificationCenterScreen} />
+      {/* ✅ Fix: both names registered so FCM deep-links work */}
+      <Stack.Screen name="NotificationDebug"     component={NotificationDiagnosticsScreen} />
+      <Stack.Screen name="NotificationDiagnostics" component={NotificationDiagnosticsScreen} />
+      <Stack.Screen name="DataPrivacySettings"   component={DataPrivacySettingsScreen} />
+      <Stack.Screen name="PrivacyPolicy"         component={PrivacyPolicyScreen} />
+      <Stack.Screen name="PhoneVerify"           component={PhoneVerifyScreen} />
+      {/* ✅ Fix: doctor message notifications tap → Chat screen for patient */}
+      <Stack.Screen name="DoctorPatientChat"     component={ChatScreen} />
+      {/* 🆘 Emergency instant doctor chat */}
+      <Stack.Screen name="Emergency"             component={EmergencyScreen} options={{ presentation: 'modal' }} />
     </Stack.Navigator>
   );
 }
@@ -253,11 +263,35 @@ function AuthStack() {
 // ─── Root Navigator ───────────────────────────────────────────────────────────
 export default function AppNavigator({ navigationRef, onReady }) {
   const { isLoggedIn, user, loading } = useAuth();
+  const { isHighContrast } = useAppTheme();
+
+  // React Navigation theme for high contrast / elder mode
+  const navTheme = isHighContrast ? {
+    dark: true,
+    colors: {
+      primary:      '#00FFCC',
+      background:   '#000000',
+      card:         '#111111',
+      text:         '#FFFFFF',
+      border:       '#444444',
+      notification: '#FF4444',
+    },
+  } : {
+    dark: false,
+    colors: {
+      primary:      COLORS.brand600,
+      background:   '#F8FAFC',
+      card:         COLORS.white,
+      text:         COLORS.slate800,
+      border:       COLORS.border,
+      notification: COLORS.red500,
+    },
+  };
 
   if (loading) return <LoadingScreen />;
 
   return (
-    <NavigationContainer ref={navigationRef} onReady={onReady}>
+    <NavigationContainer ref={navigationRef} onReady={onReady} theme={navTheme}>
       {!isLoggedIn ? (
         <AuthStack />
       ) : user?.role === 'caretaker' ? (

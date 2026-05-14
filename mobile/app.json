@@ -27,7 +27,8 @@
         "android.permission.POST_NOTIFICATIONS",
         "android.permission.SCHEDULE_EXACT_ALARM",
         "android.permission.USE_EXACT_ALARM",
-        "android.permission.WAKE_LOCK"
+        "android.permission.WAKE_LOCK",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "ios": {
@@ -65,7 +66,7 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "23041707-83ef-4fa1-a303-8a1145b4b4e8"
+        "projectId": "68acfcd1-07a8-439e-8542-66be19854a89"
       }
     }
   }

@@ -5,6 +5,7 @@
  * All calls go to API_BASE — correctly configured for the deployed backend.
  *
  * Deployed Backend: https://medisync-backend-520988526649.asia-south1.run.app
+ * Project: medisync-496009 | Region: asia-south1
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -17,7 +18,7 @@ const LOCAL_WIFI_IP = '192.168.1.13'; // fallback for iOS/web
 
 const getApiBase = () => {
   if (process.env.EXPO_PUBLIC_API_URL) return process.env.EXPO_PUBLIC_API_URL;
-  if (ENV === 'PROD') return 'https://backend-520988526649.asia-south1.run.app';
+  if (ENV === 'PROD') return 'https://medisync-backend-520988526649.asia-south1.run.app';
   if (ENV === 'STAGING') return 'https://medisync-staging.run.app';
   if (Platform.OS === 'android') {
     // Always use localhost for Android DEV — works via `adb reverse tcp:8000 tcp:8000`
@@ -725,4 +726,9 @@ export async function apiMarkDoseSkipped(med_id, slot = '', authoritative_time =
     method: 'POST',
     body: JSON.stringify({ med_id, slot, status: 'skipped', authoritative_time }),
   });
+}
+
+/** Send a test FCM push to self — tests full server → device pipeline */
+export async function apiSendTestPush() {
+  return apiFetch('/notifications/test-push', { method: 'POST' });
 }

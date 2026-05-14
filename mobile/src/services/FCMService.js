@@ -265,7 +265,8 @@ export async function initFCM(navigationRef) {
 
     // ── 3. Register token with backend ────────────────────────────────────
     try {
-      await apiRegisterFCMToken(token, Platform.OS, 'fcm');
+      // ✅ Fix: correct arg order — token, deviceId, platform (not token, Platform.OS, 'fcm')
+      await apiRegisterFCMToken(token, '', Platform.OS);
       console.log('[FCM] Token registered with backend');
     } catch (e) {
       console.warn('[FCM] Backend token registration failed (non-fatal):', e.message);
@@ -275,7 +276,7 @@ export async function initFCM(navigationRef) {
     const unsubRefresh = messaging().onTokenRefresh(async (newToken) => {
       console.log('[FCM] Token refreshed');
       await AsyncStorage.setItem(FCM_TOKEN_KEY, newToken);
-      try { await apiRegisterFCMToken(newToken, Platform.OS, 'fcm'); } catch { }
+      try { await apiRegisterFCMToken(newToken, '', Platform.OS); } catch { }
     });
 
     // ── 5. Foreground message handler ─────────────────────────────────────

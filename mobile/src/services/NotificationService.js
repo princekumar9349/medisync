@@ -561,6 +561,87 @@ class NotificationService {
     try { await notifee.cancelAllNotifications(); } catch { }
   }
 
+  // ── Schedule a Medicine Reminder (used by ProfileScreen test & live tracker) ─
+  async scheduleMedicineReminder(med, triggerTimestampMs) {
+    if (!notifee) {
+      console.warn('[NS] notifee unavailable — cannot schedule reminder');
+      return null;
+    }
+    try {
+      const medId = med._id || med.med_id || med.name || 'test';
+      const id = `scheduled_${medId}_${triggerTimestampMs}`;
+      await notifee.createTriggerNotification(
+        {
+          id,
+          title: `💊 Time for ${med.name}`,
+          body: `Take your ${med.dosage || 'dose'} now.`,
+          data: { medicineId: String(medId), type: 'medicine' },
+          android: {
+            channelId: CH.MEDICINE,
+            smallIcon: 'ic_launcher',
+            color: COLORS.medicine,
+            pressAction: { id: 'default' },
+            actions: [
+              { title: '✅ Taken', pressAction: { id: 'action_taken' } },
+              { title: '⏰ Snooze 10m', pressAction: { id: 'action_snooze' } },
+            ],
+          },
+        },
+        {
+          type: TriggerType.TIMESTAMP ?? 0,
+          timestamp: triggerTimestampMs,
+          alarmManager: { allowWhileIdle: true },
+        }
+      );
+      return id;
+    } catch (e) {
+      console.warn('[NS] scheduleMedicineReminder error:', e.message);
+      return null;
+    }
+  }
+
+  // ── Schedule Engagement Summary (daily summary at set time) ─────────────────
+  async scheduleEngagementSummary(role = 'patient', triggerTimestampMs) {
+    if (!notifee) return;
+    try {
+      const titleMap = {
+        patient:   '📊 Your Daily Medicine Summary',
+        doctor:    '🏥 Doctor Daily Summary',
+        caretaker: '👨‍👩‍👦 Caretaker Daily Summary',
+      };
+      const bodyMap = {
+        patient:   'Check your medicine adherence for today.',
+        doctor:    'Review today\'s patient activity.',
+        caretaker: 'Check how your patient is doing today.',
+      };
+      const id = `daily_summary_${role}`;
+      // Cancel previous
+      try { await notifee.cancelTriggerNotification(id); } catch {}
+      await notifee.createTriggerNotification(
+        {
+          id,
+          title: titleMap[role] || titleMap.patient,
+          body:  bodyMap[role]  || bodyMap.patient,
+          data:  { type: 'system', action_route: 'Pillbox' },
+          android: {
+            channelId: CH.SYSTEM,
+            smallIcon: 'ic_launcher',
+            color: COLORS.system,
+            pressAction: { id: 'default' },
+          },
+        },
+        {
+          type: TriggerType.TIMESTAMP ?? 0,
+          timestamp: triggerTimestampMs,
+          alarmManager: { allowWhileIdle: true },
+        }
+      );
+      console.log(`[NS] Daily summary scheduled for ${role} at ${new Date(triggerTimestampMs).toLocaleTimeString()}`);
+    } catch (e) {
+      console.warn('[NS] scheduleEngagementSummary error:', e.message);
+    }
+  }
+
   // ── Test ──────────────────────────────────────────────────────────────────────
   async testNotification() {
     await this._display({
@@ -568,6 +649,26 @@ class NotificationService {
       body: 'Medicine reminders and alerts are working correctly.',
       android: { channelId: CH.MEDICINE, smallIcon: 'ic_launcher', color: COLORS.medicine, pressAction: { id: 'default' } },
     }, true);
+  }
+
+  // ── Full notification test suite (called from Diagnostics screen) ─────────────
+  async runDiagnosticTests() {
+    const results = [];
+    const test = async (name, fn) => {
+      try {
+        await fn();
+        results.push({ name, ok: true });
+      } catch (e) {
+        results.push({ name, ok: false, error: e.message });
+      }
+    };
+    await test('Channels Created',    () => this.createChannels());
+    await test('Medicine Reminder',   () => this.showMedicineReminder({ name: 'Test Medicine', dosage: '1 tab', med_id: 'diag_test' }, 0));
+    await test('AI Warning',          () => this.showAIWarning('Diagnostic test: AI health warning'));
+    await test('Doctor Message',      () => this.showDoctorMessage('Dr. Test', 'This is a diagnostic test message.'));
+    await test('Caretaker Alert',     () => this.showCaretakerAlert('Test Patient', 'Diagnostic: patient needs attention.', false));
+    await test('Engagement (streak)', () => this.showEngagementNotification('streak_3'));
+    return results;
   }
 }
 

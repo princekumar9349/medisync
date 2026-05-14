@@ -15,10 +15,20 @@
         "EXPO_PUBLIC_ENV": "staging"
       }
     },
+    "preview": {
+      "autoIncrement": true,
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://medisync-backend-520988526649.asia-south1.run.app",
+        "EXPO_PUBLIC_ENV": "production"
+      }
+    },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api.medisync.app",
+        "EXPO_PUBLIC_API_URL": "https://medisync-backend-520988526649.asia-south1.run.app",
         "EXPO_PUBLIC_ENV": "production"
       }
     }

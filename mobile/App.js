@@ -19,6 +19,7 @@ import { NavigationContainerRef } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { AuthProvider } from './src/context/AuthContext';
+import { AppThemeProvider } from './src/context/AppThemeContext';
 import AppNavigator from './src/navigation/AppNavigator';
 import { setupNotifications } from './src/utils/notifications';
 import { registerBackgroundHandler, initFCM, consumePendingNav } from './src/services/FCMService';
@@ -177,14 +178,16 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <AuthProvider>
-          <ToastProvider>
-            <NetworkStatusBanner />
-            <AppNavigator
-              navigationRef={navigationRef}
-              onReady={onNavigationReady}
-            />
-            <StatusBar style="auto" />
-          </ToastProvider>
+          <AppThemeProvider>
+            <ToastProvider>
+              <NetworkStatusBanner />
+              <AppNavigator
+                navigationRef={navigationRef}
+                onReady={onNavigationReady}
+              />
+              <StatusBar style="auto" />
+            </ToastProvider>
+          </AppThemeProvider>
         </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

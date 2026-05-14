@@ -128,7 +128,7 @@ function EmptyState({ icon, title, sub }) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function CaretakerDashboardScreen() {
-  const { logout, user, login } = useAuth();
+  const { logout, user } = useAuth();
   const navigation = useNavigation();
 
   const [ctx,        setCtx]        = useState(null);
@@ -141,7 +141,7 @@ export default function CaretakerDashboardScreen() {
 
   useEffect(() => { init(); }, []);
 
-  // ── 5-Minute Inactivity Timeout ──
+  // ── 5-Minute Inactivity Timeout — auto logout (not role-switch) ──
   const backgroundTime = React.useRef(null);
   useEffect(() => {
     const sub = AppState.addEventListener('change', (nextState) => {
@@ -150,14 +150,14 @@ export default function CaretakerDashboardScreen() {
       } else if (nextState === 'active' && backgroundTime.current) {
         const elapsedMinutes = (Date.now() - backgroundTime.current) / 60000;
         if (elapsedMinutes >= 5) {
-          // Lock screen / switch back to patient
-          login(user, 'patient');
+          // ✅ Fix: full logout, not a silent role switch
+          logout();
         }
         backgroundTime.current = null;
       }
     });
     return () => sub.remove();
-  }, [navigation, logout]);
+  }, [logout]);
 
   async function init() {
     try {
@@ -186,8 +186,8 @@ export default function CaretakerDashboardScreen() {
   function handleRefresh() { setRefreshing(true); fetchData(); }
 
   function handleLogout() {
-    // Fast switch back to patient
-    login(user, 'patient');
+    // ✅ Fix: properly logout to Login screen, not switch to patient
+    logout();
   }
 
   // Derive medicine lists
@@ -197,8 +197,10 @@ export default function CaretakerDashboardScreen() {
   const upcoming  = allMeds.filter(m => ['upcoming', 'active', 'late'].includes(m.status));
   const score     = allMeds.length > 0 ? Math.round((taken.length / allMeds.length) * 100) : 0;
   const hasSOS    = emergency?.has_active;
-  const patientName = ctx?.patient_name || 'Patient';
-  const patientId   = ctx?.linked_patient_id || '';
+  const patientName = ctx?.patient_name || user?.name || 'Patient';
+  const patientId   = ctx?.linked_patient_id || user?.patient_id || '';
+  // ✅ Fix: Show actual session info from ctx, not 0
+  const sessionStart = ctx?.started_at ? new Date(ctx.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;
 
   // Next medicine
   const nextMed = upcoming[0];
@@ -236,7 +238,10 @@ export default function CaretakerDashboardScreen() {
             </View>
             <View>
               <Text style={s.headerName}>{patientName}</Text>
-              <Text style={s.headerSub}>ID: {patientId}</Text>
+              <Text style={s.headerSub}>
+                {patientId ? `ID: ${patientId}` : 'Caretaker View'}
+                {sessionStart ? `  ·  Since ${sessionStart}` : ''}
+              </Text>
             </View>
           </View>
           <View style={s.headerRight}>
