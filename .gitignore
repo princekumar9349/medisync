@@ -4,6 +4,11 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Secrets
+backend/firebase/serviceAccountKey.json
+backend/env.yaml
+.env
+.env.*
 # Expo / React Native
 .expo/
 dist/
