@@ -1,0 +1,32 @@
+# .gcloudignore — controls what gets uploaded to Cloud Build
+# Unlike .gitignore, this intentionally INCLUDES firebase credentials
+# because the Docker image needs them for FCM.
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.python-version
+tests/
+test_out.txt
+
+# Dev files
+.env
+.env.*
+.vscode/
+.DS_Store
+
+# Node (frontend — not part of backend build)
+node_modules/
+
+# Git
+.git/
+.gitignore
+
+# Local secrets that are passed via --env-vars-file, NOT baked into image
+env.yaml
+
+# NOTE: firebase/serviceAccountKey.json is intentionally NOT ignored here
+# It must be present in the Docker image for Firebase Admin SDK to work.
