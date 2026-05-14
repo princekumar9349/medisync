@@ -13,7 +13,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NotificationService from './NotificationService';
-import ForegroundTaskManager from './BackgroundTasks';
+import { enqueueSyncAction } from '../sync/queue';
 import { apiMarkDoseTaken, apiMarkDoseSkipped, apiRegisterFCMToken } from './api';
 
 const STORE_KEY      = '@medisync_medicines';
@@ -116,30 +116,9 @@ class ReminderEngine {
 
   // ─── Schedule all reminders ────────────────────────────────────────────────
   async scheduleAllReminders() {
-    const now = new Date();
-    let nextUpcomingMed = null;
-    let nextUpcomingTime = Infinity;
-
-    for (const med of this.medicines) {
-      const times = this._getMedTimes(med);
-      for (let t of times) {
-        // If time passed today, schedule for tomorrow
-        if (t.getTime() < now.getTime()) {
-          t = new Date(t.getTime() + 86400000);
-        }
-        await NotificationService.scheduleMedicineReminder(med, t.getTime());
-        if (t.getTime() < nextUpcomingTime) {
-          nextUpcomingTime = t.getTime();
-          nextUpcomingMed = med;
-        }
-      }
-    }
-
-    if (nextUpcomingMed) {
-      await ForegroundTaskManager.startCountdown(nextUpcomingMed.name, nextUpcomingTime);
-    } else {
-      await ForegroundTaskManager.stopCountdown();
-    }
+    // Local scheduling disabled: Notifications are now driven purely by the backend FCM pushes.
+    // The mobile app only needs to be registered with FCM.
+    console.log('[ReminderEngine] Local scheduling disabled. Relying on backend FCM pushes.');
   }
 
   // ─── Start escalation chain for a specific medicine ──────────────────────────
@@ -192,6 +171,7 @@ class ReminderEngine {
       await this._saveEscalationState();
     }
     await NotificationService.cancelMedicineNotifications(medId);
+    await NotificationService.cancelLiveTracker(medId);
   }
 
   async _saveEscalationState() {
@@ -208,31 +188,57 @@ class ReminderEngine {
   }
 
   // ─── Quick action handlers (called from App.js background event) ─────────────
-  async handleTaken(medicineId) {
+  async handleTaken(medicineId, stage = null) {
+    const timestamp = new Date().toISOString();
     try {
-      await apiMarkDoseTaken(medicineId);
+      await apiMarkDoseTaken(medicineId, '', timestamp);
     } catch (e) {
-      console.warn('[ReminderEngine] Failed to mark taken on backend:', e.message);
+      console.warn('[ReminderEngine] Network fail marking taken. Queuing offline action:', e.message);
+      await enqueueSyncAction({
+        operation_type: 'MARK_TAKEN',
+        priority: 1, // High priority adherence log
+        payload: { medicine_id: medicineId, slot: '', timestamp },
+        dedupe_key: `taken_${medicineId}`
+      });
     }
     await this.cancelEscalation(medicineId);
     await NotificationService.showEngagementNotification('all_taken');
   }
 
-  async handleSkipped(medicineId) {
+  async handleSkipped(medicineId, stage = null) {
+    const timestamp = new Date().toISOString();
     try {
-      await apiMarkDoseSkipped(medicineId);
+      await apiMarkDoseSkipped(medicineId, '', timestamp);
     } catch (e) {
-      console.warn('[ReminderEngine] Failed to mark skipped on backend:', e.message);
+      console.warn('[ReminderEngine] Network fail marking skipped. Queuing offline action:', e.message);
+      await enqueueSyncAction({
+        operation_type: 'MARK_SKIPPED',
+        priority: 1, // High priority adherence log
+        payload: { medicine_id: medicineId, slot: '', timestamp },
+        dedupe_key: `skipped_${medicineId}`
+      });
     }
     await this.cancelEscalation(medicineId);
   }
 
   async handleSnooze(medicineId) {
+    const count = (this.escalationState[medicineId]?.snoozeCount || 0) + 1;
     await this.cancelEscalation(medicineId);
+    
+    // Restore count after cancelEscalation wipes the state
+    this.escalationState[medicineId] = { snoozeCount: count };
+    await this._saveEscalationState();
+
+    // Escalation Intelligence: Shorten snooze limits dynamically
+    let snoozeMinutes = 10;
+    if (count === 2) snoozeMinutes = 5;
+    if (count >= 3) snoozeMinutes = 2;
+
     const med = this.medicines.find(m => (m.med_id || m._id || m.name) === medicineId);
     if (!med) return;
-    const snoozeTime = Date.now() + 10 * 60 * 1000;
-    await NotificationService.scheduleMedicineReminder(med, snoozeTime);
+    
+    const snoozeTime = Date.now() + snoozeMinutes * 60 * 1000;
+    await NotificationService.scheduleLiveTrackerEvents(med, snoozeTime);
   }
 
   // ─── Daily Scheduled Summaries ────────────────────────────────────────────────

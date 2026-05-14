@@ -169,7 +169,7 @@ function AIPane({ lang }) {
   const QUICK = lang === 'hi' ? QUICK_HI : QUICK_EN;
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={120}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 120 : 80}>
       <ScrollView ref={scrollRef} style={sty.list} contentContainerStyle={{ padding: SPACING.lg, paddingBottom: 16 }} showsVerticalScrollIndicator={false}>
         {msgs.map(m => <Bubble key={m.id} m={m} lang={lang} />)}
         {busy && (
@@ -246,7 +246,7 @@ function DoctorPane({ lang, onRegisterRefresh }) {
   }
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={120}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 120 : 80}>
       {/* Secure banner */}
       <View style={sty.secureBanner}>
         <View style={sty.secureDot} />
@@ -318,7 +318,7 @@ export default function ChatScreen({ route, navigation }) {
     <View style={S.screen}>
       <AppHeader
         title={tab === 'ai' ? 'AI Assistant' : 'Doctor Chat'}
-        subtitle={tab === 'ai' ? 'MediSync · Powered by Gemini' : 'Secure Healthcare Messaging'}
+        subtitle={tab === 'ai' ? 'MediSync · Powered by Groq AI' : 'Secure Healthcare Messaging'}
         right={headerRight}
       />
 
@@ -374,7 +374,7 @@ const sty = StyleSheet.create({
   speaker:   { width: 26, height: 26, borderRadius: 13, backgroundColor: COLORS.slate100, alignItems: 'center', justifyContent: 'center' },
   tsLbl:     { fontSize: 10, color: COLORS.slate400 },
 
-  bar:     { flexDirection: 'row', alignItems: 'flex-end', gap: 10, padding: SPACING.lg, paddingBottom: Platform.OS === 'ios' ? 28 : SPACING.lg, backgroundColor: COLORS.white, borderTopWidth: 1, borderTopColor: COLORS.border },
+  bar:     { flexDirection: 'row', alignItems: 'flex-end', gap: 10, padding: SPACING.lg, paddingBottom: Platform.OS === 'ios' ? 28 : 80, backgroundColor: COLORS.white, borderTopWidth: 1, borderTopColor: COLORS.border },
   inp:     { flex: 1, backgroundColor: '#F7F9FC', borderWidth: 1, borderColor: COLORS.border, borderRadius: 22, paddingHorizontal: 16, paddingVertical: Platform.OS === 'ios' ? 12 : 10, fontSize: FONTS.base, color: COLORS.slate800, maxHeight: 100 },
   sendBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.brand600, alignItems: 'center', justifyContent: 'center' },
 

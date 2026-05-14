@@ -2,7 +2,7 @@
   "expo": {
     "name": "Medisync",
     "slug": "medisync-mobile",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -10,6 +10,25 @@
       "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#0D9488"
+    },
+    "android": {
+      "package": "com.medisync.app",
+      "versionCode": 2,
+      "googleServicesFile": "./google-services.json",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#0D9488"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.VIBRATE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.USE_EXACT_ALARM",
+        "android.permission.WAKE_LOCK"
+      ]
     },
     "ios": {
       "supportsTablet": false,
@@ -20,30 +39,13 @@
         "NSMicrophoneUsageDescription": "Medisync uses microphone for voice commands and chatbot interaction."
       }
     },
-    "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0D9488"
-      },
-      "permissions": [
-        "android.permission.CAMERA",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.VIBRATE",
-        "android.permission.RECEIVE_BOOT_COMPLETED",
-        "android.permission.POST_NOTIFICATIONS",
-        "android.permission.SCHEDULE_EXACT_ALARM",
-        "android.permission.USE_EXACT_ALARM",
-        "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_HEALTH",
-        "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
-        "android.permission.SYSTEM_ALERT_WINDOW",
-        "android.permission.WAKE_LOCK"
-      ],
-      "package": "com.medisync.app"
-    },
     "plugins": [
-      "@react-native-firebase/app",
+      [
+        "@react-native-firebase/app",
+        {
+          "ios": false
+        }
+      ],
       [
         "expo-image-picker",
         {
@@ -57,7 +59,9 @@
           "icon": "./assets/icon.png",
           "color": "#0D9488"
         }
-      ]
+      ],
+      "expo-sqlite",
+      "expo-secure-store"
     ],
     "extra": {
       "eas": {

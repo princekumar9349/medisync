@@ -39,19 +39,19 @@ try {
 let notifee = null;
 let AndroidImportance = {};
 let AndroidVisibility = {};
-let AndroidCategory   = {};
+let AndroidCategory = {};
 try {
   const mod = require('@notifee/react-native');
-  notifee            = mod.default;
-  AndroidImportance  = mod.AndroidImportance  || {};
-  AndroidVisibility  = mod.AndroidVisibility  || {};
-  AndroidCategory    = mod.AndroidCategory    || {};
+  notifee = mod.default;
+  AndroidImportance = mod.AndroidImportance || {};
+  AndroidVisibility = mod.AndroidVisibility || {};
+  AndroidCategory = mod.AndroidCategory || {};
 } catch (e) {
   console.warn('[FCM] Notifee not available:', e.message);
 }
 
 const PENDING_NAV_KEY = '@medisync_pending_nav';
-const FCM_TOKEN_KEY   = '@medisync_fcm_token';
+const FCM_TOKEN_KEY = '@medisync_fcm_token';
 
 // ─── Type → Channel + Priority map ───────────────────────────────────────────
 const TYPE_CONFIG = {
@@ -121,37 +121,52 @@ async function storePendingNav(screen, params = {}) {
   if (!screen) return;
   try {
     await AsyncStorage.setItem(PENDING_NAV_KEY, JSON.stringify({ screen, params }));
-  } catch {}
+  } catch { }
 }
 
 // ─── Display FCM payload via Notifee ──────────────────────────────────────────
 async function displayFCMNotification(remoteMessage) {
   if (!notifee) return;
   try {
-    const data   = remoteMessage.data || {};
-    const notif  = remoteMessage.notification || {};
-    const type   = data.type || 'system';
-    const cfg    = getConfig(type);
+    const data = remoteMessage.data || {};
+    const notif = remoteMessage.notification || {};
+    const type = data.type || 'system';
+    const cfg = getConfig(type);
 
-    const title  = notif.title || data.title || 'MediSync';
-    const body   = notif.body  || data.body  || '';
+    const title = notif.title || data.title || 'MediSync';
+    const body = notif.body || data.body || '';
+
+    // Record last push
+    AsyncStorage.setItem('@medisync_last_push_time', String(Date.now())).catch(() => {});
+
+    // Drift Analytics (fire and forget)
+    if (data.scheduled_for) {
+      try {
+        const expected = parseInt(data.scheduled_for, 10);
+        const actual = Date.now();
+        const driftMs = actual - expected;
+        import('./api').then(({ apiNotificationAnalytics }) => {
+          apiNotificationAnalytics(remoteMessage.messageId || 'local', 'delivered_with_drift', { drift_ms: driftMs }).catch(() => {});
+        }).catch(() => {});
+      } catch (e) { }
+    }
 
     const androidConfig = {
       channelId: cfg.channelId,
       smallIcon: 'ic_launcher',
-      color:     '#0D9488',
+      color: '#0D9488',
       pressAction: { id: 'default' },
       showTimestamp: true,
     };
 
     // Emergency: max priority, full-screen, persistent
     if (type === 'emergency') {
-      androidConfig.importance  = AndroidImportance?.URGENT;
-      androidConfig.visibility  = AndroidVisibility?.PUBLIC;
-      androidConfig.category    = AndroidCategory?.ALARM;
-      androidConfig.ongoing     = true;
+      androidConfig.importance = AndroidImportance?.URGENT;
+      androidConfig.visibility = AndroidVisibility?.PUBLIC;
+      androidConfig.category = AndroidCategory?.ALARM;
+      androidConfig.ongoing = true;
       androidConfig.asForegroundService = false;
-      androidConfig.vibrationPattern    = [0, 500, 200, 500, 200, 500];
+      androidConfig.vibrationPattern = [0, 500, 200, 500, 200, 500];
       androidConfig.lights = { color: '#FF0000', onMs: 300, offMs: 200 };
     }
 
@@ -165,9 +180,9 @@ async function displayFCMNotification(remoteMessage) {
     // Medicine reminder: action buttons
     if (type === 'medicine_reminder') {
       androidConfig.actions = [
-        { title: '✅ Taken',  pressAction: { id: 'action_taken',  launchActivity: 'default' } },
+        { title: '✅ Taken', pressAction: { id: 'action_taken', launchActivity: 'default' } },
         { title: '⏰ Snooze', pressAction: { id: 'action_snooze', launchActivity: 'default' } },
-        { title: '❌ Skip',   pressAction: { id: 'action_skip',   launchActivity: 'default' } },
+        { title: '❌ Skip', pressAction: { id: 'action_skip', launchActivity: 'default' } },
       ];
       if (data.medicineId) androidConfig.data = { medicineId: data.medicineId };
     }
@@ -185,11 +200,11 @@ async function displayFCMNotification(remoteMessage) {
 
 // ─── Handle tap navigation ─────────────────────────────────────────────────────
 function buildNavTarget(data) {
-  const type   = data?.type || 'system';
-  const cfg    = getConfig(type);
+  const type = data?.type || 'system';
+  const cfg = getConfig(type);
   const params = {};
 
-  if (type === 'doctor_message' && data.patient_id)  params.patientId  = data.patient_id;
+  if (type === 'doctor_message' && data.patient_id) params.patientId = data.patient_id;
   if (type === 'medicine_reminder' && data.medicineId) params.medicineId = data.medicineId;
 
   return { screen: cfg.screen, params };
@@ -260,7 +275,7 @@ export async function initFCM(navigationRef) {
     const unsubRefresh = messaging().onTokenRefresh(async (newToken) => {
       console.log('[FCM] Token refreshed');
       await AsyncStorage.setItem(FCM_TOKEN_KEY, newToken);
-      try { await apiRegisterFCMToken(newToken, Platform.OS, 'fcm'); } catch {}
+      try { await apiRegisterFCMToken(newToken, Platform.OS, 'fcm'); } catch { }
     });
 
     // ── 5. Foreground message handler ─────────────────────────────────────
@@ -278,7 +293,7 @@ export async function initFCM(navigationRef) {
       if (navigationRef?.current) {
         // Small delay to let navigator be ready
         setTimeout(() => {
-          try { navigationRef.current.navigate(screen, params); } catch {}
+          try { navigationRef.current.navigate(screen, params); } catch { }
         }, 500);
       } else {
         await storePendingNav(screen, params);
@@ -316,7 +331,7 @@ export async function consumePendingNav(navigationRef) {
         }
       }, 800);
     }
-  } catch {}
+  } catch { }
 }
 
 export default {

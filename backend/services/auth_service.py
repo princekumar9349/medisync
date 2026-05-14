@@ -14,12 +14,13 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import bcrypt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from dotenv import load_dotenv
 
 from models.schemas import TokenData
+from security.sessions import SessionManager
 
 load_dotenv()
 logger = logging.getLogger("Medisync.Auth")
@@ -84,9 +85,10 @@ def decode_access_token(token: str) -> Optional[TokenData]:
         email: str = payload.get("email")
         role: str = payload.get("role")          # present in caretaker JWTs
         pin_version: int = payload.get("pin_version")  # caretaker session version
+        session_id: str = payload.get("session_id")
         if user_id is None:
             return None
-        return TokenData(user_id=user_id, email=email, role=role, pin_version=pin_version)
+        return TokenData(user_id=user_id, email=email, role=role, pin_version=pin_version, session_id=session_id)
     except JWTError as e:
         logger.warning(f"JWT decode failed: {e}")
         return None
@@ -99,6 +101,7 @@ _bearer_scheme = HTTPBearer(auto_error=True)
 
 
 def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
 ) -> TokenData:
     """
@@ -121,6 +124,19 @@ def get_current_user(
             detail="Invalid or expired authentication token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+        
+    # Validate stateful session if present
+    if token_data.session_id:
+        if not SessionManager.is_session_valid(token_data.session_id):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session has expired or been revoked.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        # Optionally touch session to update last_seen, but not on every request to avoid write overhead.
+        # Could do it probabilistically or based on time. We'll skip for now to keep performance high.
+        
+    request.state.user_id = token_data.user_id
 
     return token_data
 

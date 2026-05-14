@@ -6,6 +6,7 @@ Routes:
   POST /auth/login                     — Authenticate and receive JWT token
   POST /auth/login/patient             — Passwordless patient login by ID
   POST /auth/caretaker-login           — Caretaker login with patient_id + PIN (rate-limited)
+  POST /auth/verify-caretaker-pin      — Fast verify for same-device switching
   PUT  /auth/set-caretaker-pin         — Patient sets/updates their caretaker access PIN
 
   [NEW] POST   /auth/caretaker/generate-pin — Auto-generate PIN (returns plain PIN once)
@@ -394,6 +395,43 @@ def caretaker_login(payload: CaretakerLogin):
         expires_in=_CARETAKER_JWT_MINUTES * 60,
         session_number=new_session_count,
     )
+
+
+@router.post(
+    "/verify-caretaker-pin",
+    summary="Fast verification of Caretaker PIN for same-device switching",
+)
+def verify_caretaker_pin(payload: CaretakerLogin, current_user: TokenData = Depends(get_current_user)):
+    """
+    Verifies the Caretaker PIN for the logged-in patient without issuing a new JWT.
+    Used for fast-switching from Patient view to Caretaker view on the same device.
+    """
+    _check_pin_rate_limit(payload.patient_id)
+
+    users_col = database.get_users()
+    if users_col is None:
+        raise HTTPException(status_code=503, detail="Database unavailable.")
+
+    patient = users_col.find_one({"_id": ObjectId(current_user.user_id)})
+    
+    if not patient or patient.get("patient_id") != payload.patient_id:
+        _record_pin_failure(payload.patient_id)
+        raise HTTPException(status_code=401, detail="Invalid Patient ID or PIN.")
+
+    if not patient.get("caretaker_access_enabled", False):
+        raise HTTPException(status_code=403, detail="Caretaker access is disabled.")
+
+    stored_hash = patient.get("caretaker_pin_hash")
+    if not stored_hash:
+        raise HTTPException(status_code=403, detail="Caretaker PIN not set up.")
+
+    submitted_hash = _hash_pin(payload.caretaker_pin)
+    if submitted_hash != stored_hash:
+        _record_pin_failure(payload.patient_id)
+        raise HTTPException(status_code=401, detail="Invalid Patient ID or PIN.")
+
+    _reset_pin_attempts(payload.patient_id)
+    return {"verified": True, "patient_name": patient.get("name", "")}
 
 
 # ─── Patient Sets Caretaker PIN (manual) ─────────────────────────────────────

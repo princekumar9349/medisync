@@ -1,11 +1,52 @@
+# ─── Python compiled files ─────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
-.env
-myenv/
+*.pyo
+*.pyd
+
+# ─── Virtual environments ─────────────────────────────────────────────────────
 venv/
 env/
-.pytest_cache/
-.DS_Store
-.vscode/
+myenv/
+.venv/
+
+# ─── Sensitive files (NEVER in image) ─────────────────────────────────────────
+.env
+.env.*
+env.yaml
+*.env
+firebase/serviceAccountKey.json
+firebase/*.json
+
+# ─── Development tools ────────────────────────────────────────────────────────
 .git/
+.github/
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# ─── Test artifacts ───────────────────────────────────────────────────────────
+.pytest_cache/
+tests/
+test_*.py
+*_test.py
+htmlcov/
+.coverage
+coverage.xml
+
+# ─── Documentation ────────────────────────────────────────────────────────────
+docs/
+*.md
+!README.md
+
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ─── Build artifacts ──────────────────────────────────────────────────────────
+dist/
+build/
+*.egg-info/

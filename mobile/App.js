@@ -9,6 +9,7 @@
  *   - Graceful fallbacks for Expo Go / missing Firebase
  */
 
+import './global.css';
 import 'react-native-gesture-handler';
 import React, { useEffect, useRef } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -21,6 +22,19 @@ import { AuthProvider } from './src/context/AuthContext';
 import AppNavigator from './src/navigation/AppNavigator';
 import { setupNotifications } from './src/utils/notifications';
 import { registerBackgroundHandler, initFCM, consumePendingNav } from './src/services/FCMService';
+import { getDb } from './src/storage/db';
+import { initStorage } from './src/storage/mmkv';
+import { startNetworkListener, stopNetworkListener } from './src/sync/network';
+import { flushSyncQueue } from './src/sync/retry';
+import { ToastProvider } from './src/components/Toast';
+import NetworkStatusBanner from './src/components/NetworkStatusBanner';
+
+// ─── Production Safety: Silence Logs ──────────────────────────────────────────
+if (!__DEV__) {
+  console.log = () => {};
+  console.debug = () => {};
+  // keep console.warn and console.error intact
+}
 
 // ─── Graceful Notifee import ──────────────────────────────────────────────────
 let notifee = null;
@@ -49,9 +63,14 @@ if (notifee) {
       console.log(`[BG Event] type=${type} action=${actionId} medId=${medicineId}`);
 
       const { default: ReminderEngine } = await import('./src/services/ReminderEngine');
+      const { apiNotificationAnalytics } = await import('./src/services/api');
       await ReminderEngine._loadEscalationState();
 
       if (type === (EventType.ACTION_PRESS ?? 2)) {
+        if (notification?.id) {
+          apiNotificationAnalytics(notification.id, actionId || 'opened').catch(() => {});
+        }
+        
         switch (actionId) {
           case 'action_taken':
             if (medicineId) await ReminderEngine.handleTaken(medicineId);
@@ -89,12 +108,9 @@ if (notifee) {
             if (notification?.id) await notifee.cancelNotification(notification.id);
         }
       } else if (type === (EventType.DISMISSED ?? 3)) {
-        const notifId = data.notification_id;
+        const notifId = data.notification_id || notification?.id;
         if (notifId) {
-          try {
-            const { apiNotificationAnalytics } = await import('./src/services/api');
-            await apiNotificationAnalytics(notifId, 'dismissed');
-          } catch {}
+          apiNotificationAnalytics(notifId, 'dismissed').catch(() => {});
         }
       }
     } catch (error) {
@@ -122,6 +138,14 @@ export default function App() {
         const unsub = await initFCM(navigationRef);
         if (mounted && unsub) fcmUnsubRef.current = unsub;
 
+        // 3. Initialize Dual-Tier Storage (MMKV + SQLite)
+        await initStorage();
+        await getDb();
+
+        // 4. Start network listener & trigger initial sync
+        startNetworkListener();
+        flushSyncQueue();
+
         console.log('[App] Bootstrap complete');
       } catch (e) {
         console.error('[App] Bootstrap error:', e.message);
@@ -139,6 +163,8 @@ export default function App() {
           fcmUnsubRef.current.unsubRefresh?.();
         }
       } catch {}
+      
+      stopNetworkListener();
     };
   }, []);
 
@@ -151,11 +177,14 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <AuthProvider>
-          <AppNavigator
-            navigationRef={navigationRef}
-            onReady={onNavigationReady}
-          />
-          <StatusBar style="auto" />
+          <ToastProvider>
+            <NetworkStatusBanner />
+            <AppNavigator
+              navigationRef={navigationRef}
+              onReady={onNavigationReady}
+            />
+            <StatusBar style="auto" />
+          </ToastProvider>
         </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

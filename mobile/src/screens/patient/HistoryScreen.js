@@ -13,11 +13,15 @@ import Svg, { Circle } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import AppHeader, { AppHeaderBtn } from '../../components/AppHeader';
+import GlassCard from '../../components/GlassCard';
+import EmptyState from '../../components/EmptyState';
+import CelebrationBurst from '../../components/CelebrationBurst';
+import { DashboardSkeleton, PrescriptionCardSkeleton } from '../../components/SkeletonLoader';
 import {
   apiGetPrescriptions, apiGetInsights, apiGetWeeklyAdherence,
   apiTriggerEmergency, apiGetEmergencyStatus,
 } from '../../services/api';
-import { COLORS, FONTS, SPACING, RADIUS, S, SHADOW } from '../../theme';
+import { COLORS, FONTS, SPACING, RADIUS, S, SHADOW, TOUCH } from '../../theme';
 
 
 const EMERGENCY_KEY = 'medisync_active_emergency';
@@ -92,7 +96,7 @@ function WeeklyChart({ data }) {
   const barW      = Math.min(28, Math.max(8, colW * 0.6));
 
   return (
-    <View style={styles.card}>
+    <GlassCard>
       {/* Header */}
       <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
         <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: COLORS.brand50, alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
@@ -160,7 +164,7 @@ function WeeklyChart({ data }) {
           <Text style={{ fontSize: FONTS.xs, color: COLORS.slate500 }}>Partial</Text>
         </View>
       </View>
-    </View>
+    </GlassCard>
   );
 }
 
@@ -171,8 +175,9 @@ function PrescriptionCard({ rx }) {
   const meds = rx.medicines || [];
   const fmt  = iso => iso ? new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
   return (
-    <TouchableOpacity style={styles.rxCard} onPress={() => setExpanded(e => !e)} activeOpacity={0.8}>
-      <View style={S.row}>
+    <TouchableOpacity onPress={() => setExpanded(e => !e)} activeOpacity={0.8}>
+      <GlassCard className="mb-2 p-4">
+        <View style={S.row}>
         <View style={styles.rxIcon}><Ionicons name="document-text" size={22} color={COLORS.brand600} /></View>
         <View style={{ flex: 1, marginLeft: 14 }}>
           <Text style={styles.rxTitle}>{rx.possible_condition || 'Prescription'}</Text>
@@ -196,6 +201,7 @@ function PrescriptionCard({ rx }) {
           )}
         </View>
       )}
+      </GlassCard>
     </TouchableOpacity>
   );
 }
@@ -312,7 +318,7 @@ export default function HistoryScreen() {
     <View style={S.screen}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
       <View style={S.headerBar}><Text style={S.headerTitle}>Dashboard</Text></View>
-      <View style={[S.center, { flex: 1 }]}><ActivityIndicator size="large" color={COLORS.brand500} /><Text style={{ color: COLORS.slate400, marginTop: 12 }}>Loading…</Text></View>
+      <DashboardSkeleton />
     </View>
   );
 
@@ -320,10 +326,16 @@ export default function HistoryScreen() {
     <View style={S.screen}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
       <View style={S.headerBar}><Text style={S.headerTitle}>Dashboard</Text></View>
-      <View style={[S.center, { flex: 1, padding: SPACING.xl }]}>
-        <Ionicons name="warning-outline" size={44} color={COLORS.amber500} />
-        <Text style={{ fontSize: FONTS.base, color: COLORS.slate700, marginTop: 12, textAlign: 'center' }}>{error}</Text>
-        <TouchableOpacity style={[S.btnPrimary, { marginTop: 20 }]} onPress={() => load()}><Text style={S.btnPrimaryText}>Retry</Text></TouchableOpacity>
+      <View style={{ flex: 1, padding: SPACING.lg, justifyContent: 'center' }}>
+        <EmptyState
+          icon="cloud-offline-outline"
+          iconColor={COLORS.amber600}
+          iconBg={COLORS.amber50}
+          title="Couldn't load your dashboard"
+          body={error}
+          actionLabel="Retry"
+          onAction={() => load()}
+        />
       </View>
     </View>
   );
@@ -337,9 +349,21 @@ export default function HistoryScreen() {
         subtitle="Health Overview"
         right={
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <AppHeaderBtn icon="notifications-outline" onPress={() => navigation.navigate('NotificationCenter')} />
-            <AppHeaderBtn icon="warning" onPress={handleSOS} />
-            <AppHeaderBtn icon="refresh-outline" onPress={() => load()} />
+            <AppHeaderBtn
+              icon="notifications-outline"
+              onPress={() => navigation.navigate('NotificationCenter')}
+              accessibilityLabel="View notifications"
+            />
+            <AppHeaderBtn
+              icon="warning"
+              onPress={handleSOS}
+              accessibilityLabel="Send emergency SOS"
+            />
+            <AppHeaderBtn
+              icon="refresh-outline"
+              onPress={() => load()}
+              accessibilityLabel="Refresh dashboard"
+            />
           </View>
         }
       />
@@ -352,9 +376,17 @@ export default function HistoryScreen() {
         {/* Emergency Banner */}
         {emergency && <EmergencyBanner emergency={emergency} onDismiss={cancelEmergency} />}
 
+        {/* Streak Celebration */}
+        {streak > 0 && [3, 7, 14, 30].includes(streak) && (
+          <CelebrationBurst
+            title={`${streak}-Day Streak! 🎉`}
+            subtitle="You're taking your medicines consistently. Keep it up!"
+          />
+        )}
+
         {/* Adherence + Streak row */}
         {insights && (
-          <View style={styles.card}>
+          <GlassCard>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
               <Ionicons name="analytics" size={18} color={COLORS.brand600} style={{ marginRight: 8 }} />
               <Text style={{ fontSize: FONTS.base, fontWeight: FONTS.bold, color: COLORS.slate800 }}>Adherence Overview</Text>
@@ -399,7 +431,7 @@ export default function HistoryScreen() {
                 <Text style={{ fontSize: FONTS.xl, fontWeight: FONTS.bold, color: COLORS.amber600 }}>{streak}</Text>
               )}
             </View>
-          </View>
+          </GlassCard>
         )}
 
         {/* Quick Actions */}
@@ -420,7 +452,7 @@ export default function HistoryScreen() {
 
         {/* Recommendations */}
         {insights?.recommendations?.length > 0 && (
-          <View style={styles.card}>
+          <GlassCard>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
               <Ionicons name="bulb-outline" size={16} color={COLORS.brand600} style={{ marginRight: 8 }} />
               <Text style={{ fontSize: FONTS.base, fontWeight: FONTS.bold, color: COLORS.slate800 }}>AI Recommendations</Text>
@@ -431,7 +463,7 @@ export default function HistoryScreen() {
                 <Text style={{ fontSize: FONTS.sm, color: COLORS.slate600, lineHeight: 20, flex: 1 }}>{rec}</Text>
               </View>
             ))}
-          </View>
+          </GlassCard>
         )}
 
         {/* Weekly chart */}
@@ -442,11 +474,13 @@ export default function HistoryScreen() {
           <Text style={S.sectionTitle}>Prescriptions ({prescriptions.length})</Text>
         </View>
         {prescriptions.length === 0 ? (
-          <View style={styles.emptyBox}>
-            <Ionicons name="folder-open-outline" size={36} color={COLORS.brand400} />
-            <Text style={{ fontSize: FONTS.base, fontWeight: FONTS.bold, color: COLORS.slate800, marginTop: 10 }}>No prescriptions yet</Text>
-            <Text style={{ fontSize: FONTS.sm, color: COLORS.slate500, marginTop: 4 }}>Scan your first prescription.</Text>
-          </View>
+          <EmptyState
+            icon="document-text-outline"
+            title="No prescriptions yet"
+            body="Scan your first prescription to see your full medication history here."
+            actionLabel="Scan a Prescription"
+            onAction={() => navigation.navigate('Scan')}
+          />
         ) : prescriptions.map((rx, i) => <PrescriptionCard key={rx._id || i} rx={rx} />)}
       </ScrollView>
     </View>

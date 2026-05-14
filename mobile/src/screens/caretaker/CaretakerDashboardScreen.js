@@ -7,7 +7,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  StatusBar, RefreshControl, Dimensions, Animated,
+  StatusBar, RefreshControl, Dimensions, Animated, AppState
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -128,7 +128,7 @@ function EmptyState({ icon, title, sub }) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function CaretakerDashboardScreen() {
-  const { logout } = useAuth();
+  const { logout, user, login } = useAuth();
   const navigation = useNavigation();
 
   const [ctx,        setCtx]        = useState(null);
@@ -140,6 +140,24 @@ export default function CaretakerDashboardScreen() {
   const [activeTab,  setActiveTab]  = useState('today');
 
   useEffect(() => { init(); }, []);
+
+  // ── 5-Minute Inactivity Timeout ──
+  const backgroundTime = React.useRef(null);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'background' || nextState === 'inactive') {
+        backgroundTime.current = Date.now();
+      } else if (nextState === 'active' && backgroundTime.current) {
+        const elapsedMinutes = (Date.now() - backgroundTime.current) / 60000;
+        if (elapsedMinutes >= 5) {
+          // Lock screen / switch back to patient
+          login(user, 'patient');
+        }
+        backgroundTime.current = null;
+      }
+    });
+    return () => sub.remove();
+  }, [navigation, logout]);
 
   async function init() {
     try {
@@ -168,11 +186,8 @@ export default function CaretakerDashboardScreen() {
   function handleRefresh() { setRefreshing(true); fetchData(); }
 
   function handleLogout() {
-    AsyncStorage.multiRemove(['medisync_token', 'medisync_user', 'medisync_ui_role', 'medisync_caretaker_ctx'])
-      .finally(() => {
-        logout().catch(() => {});
-        navigation.dispatch(CommonActions.reset({ index: 0, routes: [{ name: 'Login' }] }));
-      });
+    // Fast switch back to patient
+    login(user, 'patient');
   }
 
   // Derive medicine lists
@@ -206,6 +221,11 @@ export default function CaretakerDashboardScreen() {
   return (
     <View style={s.screen}>
       <StatusBar barStyle="light-content" backgroundColor={AMBER_DARK} />
+
+      {/* ── Caregiver View Active Banner ── */}
+      <View style={{ backgroundColor: '#B45309', paddingVertical: 4, alignItems: 'center' }}>
+        <Text style={{ color: '#FEF3C7', fontSize: 11, fontWeight: '800', letterSpacing: 1 }}>CAREGIVER VIEW ACTIVE</Text>
+      </View>
 
       {/* ── Header ── */}
       <SafeAreaView edges={['top']} style={{ backgroundColor: AMBER_DARK }}>

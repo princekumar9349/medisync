@@ -1,185 +1,206 @@
 """
-main.py — Medisync API Entrypoint
+main.py — Medisync API Entrypoint (Production-Hardened v3.1)
 
-Production-ready FastAPI application for intelligent medication adherence.
+Hardening changes vs v3.0:
+  - validate_production_env() called before app init (crash-fast)
+  - Sentry initialized before first request
+  - CORS restricted to explicit allowed origins (not wildcard)
+  - SCHEDULER_ENABLED guard prevents duplicate APScheduler in Cloud Run replicas
+  - JSON logger in production mode
+  - Startup validation logs all critical system states
 
 Architecture:
-  - db/database.py          : MongoDB singleton + collection accessors
-  - models/schemas.py       : All Pydantic request/response models
-  - services/auth_service.py: JWT + bcrypt authentication helpers
-  - services/ocr_service.py : EasyOCR image processing + caching
-  - services/llm_service.py : Gemini LLM calls (parsing + chatbot)
-  - services/insights_service.py: Adherence analytics engine
-  - services/scheduler.py   : APScheduler background reminder jobs
-  - routers/auth.py         : POST /auth/register, POST /auth/login
-  - routers/scan.py         : POST /scan
-  - routers/tracking.py     : POST /mark-done, DELETE /expired
-  - routers/user.py         : GET /me, GET /user-prescriptions, GET /insights
-  - routers/chat.py         : POST /chat
-  - routers/doctor.py       : POST /doctor/message, GET /doctor/messages
-  - routers/voice.py        : POST /voice-reminder, POST /notify
-
-Run:
-  python3 main.py
-  — or —
-  uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+  api/       → FastAPI Routers
+  core/      → Config, Event Bus, Logger, Schemas
+  workers/   → Background APScheduler jobs
+  chatbot/   → Isolated LLM Gateway
+  analytics/ → Pre-computed intelligence layer
+  services/  → Legacy integration
 """
 
 import logging
 import uvicorn
+import time
+import traceback
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import time
-import traceback
 
-# Internal Modules 
+# Core Infrastructure 
 from db import database
-from services.scheduler import start_scheduler, stop_scheduler
+from core.config import settings, validate_production_env
+from core.logger import setup_logger, logging_middleware, get_logger, init_sentry
+from core.events.bus import bus
+from core.events.types import DomainEvent
 
-# Routers 
-from routers import auth, scan, tracking, user, chat, voice, doctor, voice_chat, phone, notifications
+# Workers 
+from workers.scheduler import start_scheduler, stop_scheduler
 
-# Logging Setup 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(name)-22s | %(levelname)-8s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger("Medisync")
+# API Domain Routers 
+from api import auth, scan, tracking, user, chat, voice, doctor, voice_chat, phone, notifications
+from api.health import router as health_router
+from analytics.api.routes import router as analytics_router
+
+#  Step 1: Validate env before anything else 
+# Crash-fast in production if required vars are missing.
+validate_production_env()
+
+# Step 2: Setup logger (JSON in production, human-readable in dev) 
+setup_logger(is_production=settings.is_production)
+logger = get_logger("Main")
+
+# Step 3: Initialize Sentry crash monitoring 
+init_sentry(dsn=settings.SENTRY_DSN, env=settings.ENV)
 
 
-#  Lifespan (Startup / Shutdown) 
-
+# Lifespan 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    FastAPI lifespan context manager:
-      Startup  → Connect to MongoDB, start background scheduler, init Firebase
-      Shutdown → Gracefully stop scheduler
-    """
-    logger.info("Medisync API starting up...")
+    logger.info(
+        f"Medisync API starting | env={settings.ENV} | "
+        f"scheduler={'enabled' if settings.SCHEDULER_ENABLED else 'disabled'}"
+    )
 
-    # 1. Initialize MongoDB connection
+    # 1. MongoDB
     database.connect()
 
-    # 2. Start background reminder scheduler (every 30 min)
-    start_scheduler()
-
-    # 3. Initialize Firebase Admin SDK (FCM v1 push notifications)
+    # 2. Firebase Admin SDK
     from services.firebase_service import initialize_firebase
     initialize_firebase()
 
-    logger.info("Medisync API is ready.")
-    yield   # ← app runs here
+    # 3. Scheduler — only if SCHEDULER_ENABLED=true
+    # In Cloud Run with multiple replicas, set SCHEDULER_ENABLED=false on API containers
+    # and run a dedicated single-instance worker container with SCHEDULER_ENABLED=true.
+    if settings.SCHEDULER_ENABLED:
+        start_scheduler()
+        logger.info("APScheduler started on this instance.")
+    else:
+        logger.info(
+            "APScheduler SKIPPED (SCHEDULER_ENABLED=false). "
+            "Ensure a dedicated scheduler container is running."
+        )
+
+    # 4. Analytics event bus subscribers
+    from analytics.aggregators.adherence import on_dose_event, on_escalation_event
+    from analytics.aggregators.ai_metrics import on_ai_response
+
+    bus.subscribe(DomainEvent.DOSE_TAKEN,            on_dose_event)
+    bus.subscribe(DomainEvent.DOSE_MISSED,           on_dose_event)
+    bus.subscribe(DomainEvent.DOSE_SKIPPED,          on_dose_event)
+    bus.subscribe(DomainEvent.ESCALATION_TRIGGERED,  on_escalation_event)
+    bus.subscribe(DomainEvent.AI_RESPONSE_GENERATED, on_ai_response)
+
+    logger.info("Analytics event bus subscribers registered.")
+    logger.info("✅ Medisync API is ready.")
+
+    yield
 
     # Shutdown
     logger.info("Medisync API shutting down...")
-    stop_scheduler()
-    logger.info(" Shutdown complete.")
+    if settings.SCHEDULER_ENABLED:
+        stop_scheduler()
+    logger.info("Shutdown complete.")
 
 
 # FastAPI App 
-
 app = FastAPI(
     title="Medisync API",
-    description=(
-        " **Medisync** — Intelligent Medication Adherence System\n\n"
-        "Features: Prescription OCR, Gemini AI Parsing, JWT Auth, "
-        "Dose Tracking, AI Insights, Hindi/English Chatbot, Reminder Scheduler."
-    ),
-    version="2.0.0",
+    description="Intelligent Medication Adherence System — Modular Monolith Architecture.",
+    version="3.1.0",
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    # Hide docs in production to reduce attack surface
+    docs_url="/docs"   if not settings.is_production else None,
+    redoc_url="/redoc" if not settings.is_production else None,
+    openapi_url="/openapi.json" if not settings.is_production else None,
 )
 
-# CORS Middleware 
+# CORS 
+# Production: use explicit origins from CORS_ORIGINS env var.
+# Development/staging: wildcard is acceptable.
+cors_origins = settings.cors_origins_list
+logger.info(f"CORS origins: {cors_origins}")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],          # tighten in production to specific origins
+    allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
 )
 
-# Exception Handler Middleware
+# Request Logging Middleware 
+app.middleware("http")(logging_middleware)
+
+
 @app.middleware("http")
-async def log_requests(request: Request, call_next):
+async def metrics_and_error_middleware(request: Request, call_next):
+    """Logs latency for every request and captures uncaught exceptions to Sentry."""
     start_time = time.time()
     try:
         response = await call_next(request)
-        process_time = time.time() - start_time
-        logger.info(
-            f"{request.method} {request.url.path} - "
-            f"Status: {response.status_code} - "
-            f"Duration: {process_time:.3f}s"
+        duration = time.time() - start_time
+        # Log slow requests (> 2 seconds) as warnings
+        log_fn = logger.warning if duration > 2.0 else logger.info
+        log_fn(
+            f"{request.method} {request.url.path} "
+            f"→ {response.status_code} [{duration*1000:.0f}ms]"
         )
         return response
     except Exception as exc:
-        process_time = time.time() - start_time
+        duration = time.time() - start_time
         logger.error(
-            f"API CRASH: {request.method} {request.url.path} - "
-            f"Duration: {process_time:.3f}s - Error: {str(exc)}"
+            f"UNHANDLED: {request.method} {request.url.path} "
+            f"[{duration*1000:.0f}ms] — {type(exc).__name__}: {exc}"
         )
         logger.error(traceback.format_exc())
+
+        # Capture to Sentry
+        try:
+            import sentry_sdk
+            sentry_sdk.capture_exception(exc)
+        except Exception:
+            pass
+
         return JSONResponse(
             status_code=500,
-            content={"detail": "Internal Server Error", "type": str(type(exc))}
+            content={"detail": "Internal Server Error"}
         )
 
-#  Mount Routers 
 
-app.include_router(auth.router)       # /auth/register, /auth/login
-app.include_router(scan.router)       # /scan
-app.include_router(tracking.router)   # /mark-done, /expired
-app.include_router(user.router)       # /me, /user-prescriptions, /insights
-app.include_router(chat.router)       # /chat
-app.include_router(doctor.router)     # /doctor/message, /doctor/messages
-app.include_router(voice.router)      # /voice-reminder, /notify
-app.include_router(voice_chat.router) # /voice-chat/stream
-app.include_router(phone.router)      # /phone/send-otp, /phone/verify-otp
-app.include_router(notifications.router) # /notifications/*
-
-
-# Health Check 
-
-@app.get("/health-check", tags=["System"], summary="API and database health status")
-def health_check():
-    """
-    Returns the current health status of the API and its dependencies.
-    Use this to confirm the server is running and MongoDB is connected.
-    """
-    return {
-        "status": "ok",
-        "version": "2.0.0",
-        "mongodb_connected": database.ping(),
-        "scheduler_running": True,  # if we got here, startup succeeded
-    }
+# Mount Routers 
+app.include_router(health_router)       # /health, /ready
+app.include_router(auth.router)         # /auth/*
+app.include_router(scan.router)         # /scan
+app.include_router(tracking.router)     # /mark-done, /expired, /pillbox
+app.include_router(user.router)         # /me, /insights
+app.include_router(chat.router)         # /chat
+app.include_router(doctor.router)       # /doctor/*
+app.include_router(voice.router)        # /voice-reminder, /notify
+app.include_router(voice_chat.router)   # /voice-chat/stream
+app.include_router(phone.router)        # /phone/*
+app.include_router(notifications.router)
+app.include_router(analytics_router)    # /analytics/*
 
 
-@app.get("/", tags=["System"], summary="API root — welcome message")
+@app.get("/", tags=["System"], summary="API root")
 def root():
-    """Root endpoint with quick API info."""
     return {
-        "message": "Welcome to Medisync API v2.0 ",
-        "docs": "/docs",
-        "health": "/health-check",
+        "service": "Medisync API",
+        "version": "3.1.0",
+        "env":     settings.ENV,
+        "health":  "/health",
+        "ready":   "/ready",
     }
 
-
-# Entrypoint 
 
 if __name__ == "__main__":
-    import os
-    port = int(os.environ.get("PORT", 8000))
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=port,
-        reload=False,
+        port=settings.PORT,
+        reload=not settings.is_production,
         log_level="info",
+        access_log=not settings.is_production,  # Cloud Logging handles access logs in prod
     )

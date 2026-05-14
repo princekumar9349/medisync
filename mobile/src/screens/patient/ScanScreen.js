@@ -153,23 +153,19 @@ export default function ScanScreen({ navigation, route }) {
     if (!image) return;
     setStep(1); setError(null); setStage(0);
 
-    // Animate through stages
-    let s = 0;
-    stageTimer.current = setInterval(() => {
-      s = Math.min(s + 1, STAGES.length - 1);
-      setStage(s);
-    }, 1200);
-
     try {
-      const data = await apiScan(image.uri, image.mimeType || 'image/jpeg', image.fileName || 'prescription.jpg');
-      clearInterval(stageTimer.current);
-      setStage(STAGES.length);
-      setResult(data);
-      setMeds(data.medicines || []);
-      setStep(2);
+      const data = await apiScan([image.uri]);
+      
+      // We no longer do the multi-step here, we hand off to the new OCRReviewScreen
+      const useOCRStore = require('../../store/ocrStore').useOCRStore;
+      useOCRStore.getState().setJob(data.job_id, [image.uri]);
+      
+      navigation.navigate('OCRReview');
+      
+      // Reset this screen so when they come back it's clean
+      setTimeout(reset, 500); 
     } catch (err) {
-      clearInterval(stageTimer.current);
-      setError(err.message || 'Scan failed. Please try again with a clearer image.');
+      setError(err.message || 'Scan enqueue failed. Please check network.');
       setStep(0);
     }
   }

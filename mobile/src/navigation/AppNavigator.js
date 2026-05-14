@@ -10,6 +10,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useAuth } from '../context/AuthContext';
+import { useUIStore } from '../store/uiStore';
 import { COLORS, FONTS, SHADOW } from '../theme';
 
 // Auth screens
@@ -27,10 +28,15 @@ import HistoryScreen        from '../screens/patient/HistoryScreen';
 import ProfileScreen        from '../screens/patient/ProfileScreen';
 import OnboardingScreen     from '../screens/patient/OnboardingScreen';
 import SymptomReportScreen  from '../screens/patient/SymptomReportScreen';
+import OCRReviewScreen        from '../screens/patient/OCRReviewScreen';
 import CallingSettingsScreen        from '../screens/patient/CallingSettingsScreen';
 import CaretakerDashboardScreen     from '../screens/caretaker/CaretakerDashboardScreen';
 import CaretakerSettingsScreen      from '../screens/caretaker/CaretakerSettingsScreen';
 import NotificationCenterScreen     from '../screens/patient/NotificationCenterScreen';
+import NotificationDiagnosticsScreen from '../screens/patient/NotificationDiagnosticsScreen';
+import AnalyticsDashboardScreen     from '../screens/patient/AnalyticsDashboardScreen';
+import DataPrivacySettingsScreen    from '../screens/patient/DataPrivacySettingsScreen';
+import PrivacyPolicyScreen          from '../screens/patient/PrivacyPolicyScreen';
 
 // Doctor screens
 import DoctorDashboardScreen     from '../screens/doctor/DoctorDashboardScreen';
@@ -45,21 +51,11 @@ import DoctorPatientChatScreen   from '../screens/doctor/DoctorPatientChatScreen
 const Stack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
 
-// ─── Floating nav styles (defined before FloatingTabBar uses them) ─────────────
-const navSty = StyleSheet.create({
-  wrapper: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 12, paddingBottom: Platform.OS === 'ios' ? 24 : 10, paddingTop: 6, backgroundColor: 'transparent' },
-  bar:     { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white, borderRadius: 28, paddingHorizontal: 6, paddingVertical: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.10, shadowRadius: 20, elevation: 12 },
-  tabItem: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 4, position: 'relative' },
-  activePill: { position: 'absolute', top: -4, width: 32, height: 3, borderRadius: 2, backgroundColor: COLORS.brand600 },
-  tabLabel:       { fontSize: 10, color: COLORS.slate400, fontWeight: '600', marginTop: 3 },
-  tabLabelActive: { color: COLORS.brand600, fontWeight: '700' },
-  scanWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', marginTop: -24 },
-  scanBtn:  { width: 54, height: 54, borderRadius: 27, backgroundColor: COLORS.brand600, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: COLORS.white, shadowColor: COLORS.brand600, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 10, elevation: 8 },
-});
-
-// ─── Custom floating tab bar ───────────────────────────────────────────────────
+// ─── Custom floating tab bar (NativeWind & Glassmorphism) ─────────────────────
 
 function FloatingTabBar({ state, descriptors, navigation }) {
+  const { isElderlyMode, isHighContrast } = useUIStore();
+  
   const TAB_LABELS = { History: 'Home', Pillbox: 'Pillbox', Scan: '', Chat: 'Chat', Profile: 'Profile' };
   const TAB_ICONS  = {
     History: ['time', 'time-outline'],
@@ -68,9 +64,13 @@ function FloatingTabBar({ state, descriptors, navigation }) {
     Profile: ['person', 'person-outline'],
   };
 
+  const containerClass = `absolute bottom-0 left-0 right-0 px-4 ${Platform.OS === 'ios' ? 'pb-8' : 'pb-4'} pt-2 bg-transparent`;
+  const barClass = `flex-row items-center rounded-full px-2 py-3 shadow-lg elevation-xl ${isHighContrast ? 'bg-white border-2 border-black' : 'bg-white/90 border border-white/40'}`;
+  const iconSize = isElderlyMode ? 28 : 24;
+
   return (
-    <View style={navSty.wrapper}>
-      <View style={navSty.bar}>
+    <View className={containerClass}>
+      <View className={barClass} style={{ backdropFilter: 'blur(10px)' }}>
         {state.routes.map((route, index) => {
           const isFocused = state.index === index;
           const isScan    = route.name === 'Scan';
@@ -81,19 +81,19 @@ function FloatingTabBar({ state, descriptors, navigation }) {
           }
 
           if (isScan) return (
-            <TouchableOpacity key={route.key} onPress={onPress} style={navSty.scanWrap} activeOpacity={0.85}>
-              <View style={navSty.scanBtn}>
-                <Ionicons name="scan" size={26} color={COLORS.white} />
+            <TouchableOpacity key={route.key} onPress={onPress} className="flex-1 items-center justify-center -mt-6" activeOpacity={0.85}>
+              <View className={`rounded-full items-center justify-center border-4 border-white shadow-md ${isElderlyMode ? 'w-16 h-16' : 'w-14 h-14'} ${isHighContrast ? 'bg-black' : 'bg-teal-600'}`}>
+                <Ionicons name="scan" size={iconSize + 4} color={COLORS.white} />
               </View>
             </TouchableOpacity>
           );
 
           const icons = TAB_ICONS[route.name] || ['ellipse', 'ellipse-outline'];
           return (
-            <TouchableOpacity key={route.key} onPress={onPress} style={navSty.tabItem} activeOpacity={0.75}>
-              {isFocused && <View style={navSty.activePill} />}
-              <Ionicons name={isFocused ? icons[0] : icons[1]} size={22} color={isFocused ? COLORS.brand600 : COLORS.slate400} />
-              <Text style={[navSty.tabLabel, isFocused && navSty.tabLabelActive]} numberOfLines={1}>
+            <TouchableOpacity key={route.key} onPress={onPress} className="flex-1 items-center justify-center py-1 relative" activeOpacity={0.75}>
+              {isFocused && <View className={`absolute -top-1 w-8 h-1 rounded-full ${isHighContrast ? 'bg-black' : 'bg-teal-600'}`} />}
+              <Ionicons name={isFocused ? icons[0] : icons[1]} size={iconSize} color={isFocused ? (isHighContrast ? COLORS.black : COLORS.brand600) : COLORS.slate400} />
+              <Text className={`${isElderlyMode ? 'text-xs mt-1' : 'text-[10px] mt-0.5'} ${isFocused ? (isHighContrast ? 'text-black font-extrabold' : 'text-teal-700 font-bold') : 'text-gray-500 font-medium'}`} numberOfLines={1}>
                 {TAB_LABELS[route.name]}
               </Text>
             </TouchableOpacity>
@@ -117,6 +117,21 @@ function PatientTabs() {
       <Tab.Screen name="Chat"    component={ChatScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
+  );
+}
+
+// ─── Patient Stack (wraps tabs + analytics as pushable stack screens) ─────────
+function PatientStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="PatientTabs"        component={PatientTabs} />
+      <Stack.Screen name="AnalyticsDashboard" component={AnalyticsDashboardScreen} />
+      <Stack.Screen name="NotificationCenter" component={NotificationCenterScreen} />
+      <Stack.Screen name="NotificationDiagnostics" component={NotificationDiagnosticsScreen} />
+      <Stack.Screen name="SymptomReport"      component={SymptomReportScreen} />
+      <Stack.Screen name="DataPrivacySettings" component={DataPrivacySettingsScreen} />
+      <Stack.Screen name="PrivacyPolicy"      component={PrivacyPolicyScreen} />
+    </Stack.Navigator>
   );
 }
 
@@ -203,10 +218,12 @@ function PatientStackNav() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="PatientTabs"         component={PatientTabs} />
       <Stack.Screen name="Results"             component={ResultsScreen} />
+      <Stack.Screen name="OCRReview"           component={OCRReviewScreen} />
       <Stack.Screen name="SymptomReport"       component={SymptomReportScreen} />
       <Stack.Screen name="CallingSettings"     component={CallingSettingsScreen} />
       <Stack.Screen name="CaretakerSettings"   component={CaretakerSettingsScreen} />
       <Stack.Screen name="NotificationCenter"  component={NotificationCenterScreen} />
+      <Stack.Screen name="NotificationDebug"   component={NotificationDiagnosticsScreen} />
       <Stack.Screen name="PhoneVerify"         component={PhoneVerifyScreen} />
     </Stack.Navigator>
   );

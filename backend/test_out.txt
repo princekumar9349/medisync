@@ -1,0 +1,185 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-8.1.1, pluggy-1.6.0
+rootdir: /home/prince/Desktop/medisyne/backend
+plugins: mock-3.14.0, asyncio-0.23.6, anyio-3.7.1
+asyncio: mode=Mode.STRICT
+collected 2 items
+
+tests/integration/test_idempotency.py FF                                 [100%]
+
+=================================== FAILURES ===================================
+____________________ test_duplicate_mark_done_is_idempotent ____________________
+
+client = <starlette.testclient.TestClient object at 0x7a9dbc64c5c0>
+auth_headers = {'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1MDdmMWY3N2JjZjg2Y2Q3OTk0MzkwMTEiLCJlbWFpbCI6InRlc3RAbWVkaXN5bmMuYXBwIiwicm9sZSI6InBhdGllbnQiLCJleHAiOjE3Nzg4MjA5ODh9.jXn-lzXKgA3ZDQOEhN559iRtxoSrxZgSoo9hc3uE_lU'}
+mock_mongo = mongomock.MongoClient('localhost', 27017)
+
+    def test_duplicate_mark_done_is_idempotent(client: TestClient, auth_headers: dict, mock_mongo):
+        """
+        Test that submitting the exact same mark-done event twice does not
+        create duplicate dose logs in the database, and returns a duplicate flag.
+        """
+        db = mock_mongo["medisync_db"]
+    
+        # Pre-condition: no dose logs
+        assert db["dose_logs"].count_documents({}) == 0
+    
+        payload = {
+            "med_id": "paracetamol_500mg",
+            "status": "taken",
+            "note": "Morning slot"
+        }
+    
+        # 1. First submission (should succeed)
+        response1 = client.post("/mark-done", json=payload, headers=auth_headers)
+>       assert response1.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/integration/test_idempotency.py:22: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+2026-05-14 10:26:17 |          | Medisync.Main            | INFO     | Medisync API starting | env=testing | scheduler=disabled
+2026-05-14 10:26:22 |          | Medisync.DB              | WARNING  | Strategy 1 (certifi TLS) failed: localhost:27017: [Errno 111] Connection refused (configured timeouts: socketTimeoutMS: 10000.0ms, connectTimeoutMS: 10000.0ms), Timeout: 5.0s, Topology Description: <TopologyDescription id: 6a0555f168d6a9bdbd3399c5, topology_type: Unknown, servers: [<ServerDescription ('localhost', 27017) server_type: Unknown, rtt: None, error=AutoReconnect('localhost:27017: [Errno 111] Connection refused (configured timeouts: socketTimeoutMS: 10000.0ms, connectTimeoutMS: 10000.0ms)')>]>
+2026-05-14 10:26:27 |          | Medisync.DB              | WARNING  | Strategy 2 (tlsInsecure) failed: localhost:27017: [Errno 111] Connection refused (configured timeouts: socketTimeoutMS: 10000.0ms, connectTimeoutMS: 10000.0ms), Timeout: 5.0s, Topology Description: <TopologyDescription id: 6a0555f668d6a9bdbd3399c6, topology_type: Unknown, servers: [<ServerDescription ('localhost', 27017) server_type: Unknown, rtt: None, error=AutoReconnect('localhost:27017: [Errno 111] Connection refused (configured timeouts: socketTimeoutMS: 10000.0ms, connectTimeoutMS: 10000.0ms)')>]>
+2026-05-14 10:26:28 |          | Medisync.DB              | ERROR    | MongoDB unavailable — running in offline mode. Auth/DB features disabled.
+2026-05-14 10:26:28 |          | Medisync.Firebase        | INFO     | [Firebase] ✅ Initialized successfully (project: medisync-a2db0)
+2026-05-14 10:26:28 |          | Medisync.Main            | INFO     | APScheduler SKIPPED (SCHEDULER_ENABLED=false). Ensure a dedicated scheduler container is running.
+2026-05-14 10:26:28 |          | Medisync.EventBus        | INFO     | Subscribed on_dose_event to adherence.dose_taken
+2026-05-14 10:26:28 |          | Medisync.EventBus        | INFO     | Subscribed on_dose_event to adherence.dose_missed
+2026-05-14 10:26:28 |          | Medisync.EventBus        | INFO     | Subscribed on_dose_event to adherence.dose_skipped
+2026-05-14 10:26:28 |          | Medisync.EventBus        | INFO     | Subscribed on_escalation_event to escalation.triggered
+2026-05-14 10:26:28 |          | Medisync.EventBus        | INFO     | Subscribed on_ai_response to ai.response_generated
+2026-05-14 10:26:28 |          | Medisync.Main            | INFO     | Analytics event bus subscribers registered.
+2026-05-14 10:26:28 |          | Medisync.Main            | INFO     | ✅ Medisync API is ready.
+2026-05-14 10:26:28 |          | Medisync.Auth            | INFO     | JWT token created for user: test@medisync.app
+------------------------------ Captured log setup ------------------------------
+INFO     Medisync.Main:main.py:61 Medisync API starting | env=testing | scheduler=disabled
+WARNING  Medisync.DB:database.py:59 Strategy 1 (certifi TLS) failed: localhost:27017: [Errno 111] Connection refused (configured timeouts: socketTimeoutMS: 10000.0ms, connectTimeoutMS: 10000.0ms), Timeout: 5.0s, Topology Description: <TopologyDescription id: 6a0555f168d6a9bdbd3399c5, topology_type: Unknown, servers: [<ServerDescription ('localhost', 27017) server_type: Unknown, rtt: None, error=AutoReconnect('localhost:27017: [Errno 111] Connection refused (configured timeouts: socketTimeoutMS: 10000.0ms, connectTimeoutMS: 10000.0ms)')>]>
+WARNING  Medisync.DB:database.py:85 Strategy 2 (tlsInsecure) failed: localhost:27017: [Errno 111] Connection refused (configured timeouts: socketTimeoutMS: 10000.0ms, connectTimeoutMS: 10000.0ms), Timeout: 5.0s, Topology Description: <TopologyDescription id: 6a0555f668d6a9bdbd3399c6, topology_type: Unknown, servers: [<ServerDescription ('localhost', 27017) server_type: Unknown, rtt: None, error=AutoReconnect('localhost:27017: [Errno 111] Connection refused (configured timeouts: socketTimeoutMS: 10000.0ms, connectTimeoutMS: 10000.0ms)')>]>
+ERROR    Medisync.DB:database.py:96 MongoDB unavailable — running in offline mode. Auth/DB features disabled.
+INFO     Medisync.Firebase:firebase_service.py:67 [Firebase] ✅ Initialized successfully (project: medisync-a2db0)
+INFO     Medisync.Main:main.py:80 APScheduler SKIPPED (SCHEDULER_ENABLED=false). Ensure a dedicated scheduler container is running.
+INFO     Medisync.EventBus:bus.py:22 Subscribed on_dose_event to adherence.dose_taken
+INFO     Medisync.EventBus:bus.py:22 Subscribed on_dose_event to adherence.dose_missed
+INFO     Medisync.EventBus:bus.py:22 Subscribed on_dose_event to adherence.dose_skipped
+INFO     Medisync.EventBus:bus.py:22 Subscribed on_escalation_event to escalation.triggered
+INFO     Medisync.EventBus:bus.py:22 Subscribed on_ai_response to ai.response_generated
+INFO     Medisync.Main:main.py:95 Analytics event bus subscribers registered.
+INFO     Medisync.Main:main.py:96 ✅ Medisync API is ready.
+INFO     Medisync.Auth:auth_service.py:71 JWT token created for user: test@medisync.app
+----------------------------- Captured stderr call -----------------------------
+2026-05-14 10:26:28 |          | Medisync.Main            | INFO     | POST /mark-done → 503 [2ms]
+------------------------------ Captured log call -------------------------------
+INFO     Medisync.Main:main.py:146 POST /mark-done → 503 [2ms]
+--------------------------- Captured stderr teardown ---------------------------
+2026-05-14 10:26:28 |          | Medisync.Main            | INFO     | Medisync API shutting down...
+2026-05-14 10:26:28 |          | Medisync.Main            | INFO     | Shutdown complete.
+---------------------------- Captured log teardown -----------------------------
+INFO     Medisync.Main:main.py:101 Medisync API shutting down...
+INFO     Medisync.Main:main.py:104 Shutdown complete.
+________________ test_duplicate_missed_does_not_override_taken _________________
+
+client = <starlette.testclient.TestClient object at 0x7a9dbbcbbe90>
+auth_headers = {'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1MDdmMWY3N2JjZjg2Y2Q3OTk0MzkwMTEiLCJlbWFpbCI6InRlc3RAbWVkaXN5bmMuYXBwIiwicm9sZSI6InBhdGllbnQiLCJleHAiOjE3Nzg4MjA5OTh9.u2EF24FKuR4dVDlEk6KY8VTiJ1HXaM8v5Nuj3TJvyec'}
+mock_mongo = mongomock.MongoClient('localhost', 27017)
+
+    def test_duplicate_missed_does_not_override_taken(client: TestClient, auth_headers: dict, mock_mongo):
+        """
+        Test that if a dose is already taken, a delayed offline 'missed' sync
+        does not override the taken state.
+        """
+        db = mock_mongo["medisync_db"]
+    
+        # 1. Mark as taken
+        client.post(
+            "/mark-done",
+            json={"med_id": "aspirin_75mg", "status": "taken", "note": "Morning"},
+            headers=auth_headers
+        )
+    
+        # 2. Try to mark as missed (e.g. from an offline queue arriving late)
+        response = client.post(
+            "/mark-done",
+            json={"med_id": "aspirin_75mg", "status": "missed", "note": "Sync delay"},
+            headers=auth_headers
+        )
+    
+        # The system should recognize it was already taken and reject the missed state
+        # Wait, the current logic only checks existing == "taken" or "skipped".
+        # Let's see what happens:
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/integration/test_idempotency.py:64: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+2026-05-14 10:26:28 |          | Medisync.Main            | INFO     | Medisync API starting | env=testing | scheduler=disabled
+2026-05-14 10:26:33 |          | Medisync.DB              | WARNING  | Strategy 1 (certifi TLS) failed: localhost:27017: [Errno 111] Connection refused (configured timeouts: socketTimeoutMS: 10000.0ms, connectTimeoutMS: 10000.0ms), Timeout: 5.0s, Topology Description: <TopologyDescription id: 6a0555fc68d6a9bdbd3399c7, topology_type: Unknown, servers: [<ServerDescription ('localhost', 27017) server_type: Unknown, rtt: None, error=AutoReconnect('localhost:27017: [Errno 111] Connection refused (configured timeouts: socketTimeoutMS: 10000.0ms, connectTimeoutMS: 10000.0ms)')>]>
+2026-05-14 10:26:38 |          | Medisync.DB              | WARNING  | Strategy 2 (tlsInsecure) failed: localhost:27017: [Errno 111] Connection refused (configured timeouts: socketTimeoutMS: 10000.0ms, connectTimeoutMS: 10000.0ms), Timeout: 5.0s, Topology Description: <TopologyDescription id: 6a05560168d6a9bdbd3399c8, topology_type: Unknown, servers: [<ServerDescription ('localhost', 27017) server_type: Unknown, rtt: None, error=AutoReconnect('localhost:27017: [Errno 111] Connection refused (configured timeouts: socketTimeoutMS: 10000.0ms, connectTimeoutMS: 10000.0ms)')>]>
+2026-05-14 10:26:38 |          | Medisync.DB              | ERROR    | MongoDB unavailable — running in offline mode. Auth/DB features disabled.
+2026-05-14 10:26:38 |          | Medisync.Main            | INFO     | APScheduler SKIPPED (SCHEDULER_ENABLED=false). Ensure a dedicated scheduler container is running.
+2026-05-14 10:26:38 |          | Medisync.EventBus        | INFO     | Subscribed on_dose_event to adherence.dose_taken
+2026-05-14 10:26:38 |          | Medisync.EventBus        | INFO     | Subscribed on_dose_event to adherence.dose_missed
+2026-05-14 10:26:38 |          | Medisync.EventBus        | INFO     | Subscribed on_dose_event to adherence.dose_skipped
+2026-05-14 10:26:38 |          | Medisync.EventBus        | INFO     | Subscribed on_escalation_event to escalation.triggered
+2026-05-14 10:26:38 |          | Medisync.EventBus        | INFO     | Subscribed on_ai_response to ai.response_generated
+2026-05-14 10:26:38 |          | Medisync.Main            | INFO     | Analytics event bus subscribers registered.
+2026-05-14 10:26:38 |          | Medisync.Main            | INFO     | ✅ Medisync API is ready.
+2026-05-14 10:26:38 |          | Medisync.Auth            | INFO     | JWT token created for user: test@medisync.app
+------------------------------ Captured log setup ------------------------------
+INFO     Medisync.Main:main.py:61 Medisync API starting | env=testing | scheduler=disabled
+WARNING  Medisync.DB:database.py:59 Strategy 1 (certifi TLS) failed: localhost:27017: [Errno 111] Connection refused (configured timeouts: socketTimeoutMS: 10000.0ms, connectTimeoutMS: 10000.0ms), Timeout: 5.0s, Topology Description: <TopologyDescription id: 6a0555fc68d6a9bdbd3399c7, topology_type: Unknown, servers: [<ServerDescription ('localhost', 27017) server_type: Unknown, rtt: None, error=AutoReconnect('localhost:27017: [Errno 111] Connection refused (configured timeouts: socketTimeoutMS: 10000.0ms, connectTimeoutMS: 10000.0ms)')>]>
+WARNING  Medisync.DB:database.py:85 Strategy 2 (tlsInsecure) failed: localhost:27017: [Errno 111] Connection refused (configured timeouts: socketTimeoutMS: 10000.0ms, connectTimeoutMS: 10000.0ms), Timeout: 5.0s, Topology Description: <TopologyDescription id: 6a05560168d6a9bdbd3399c8, topology_type: Unknown, servers: [<ServerDescription ('localhost', 27017) server_type: Unknown, rtt: None, error=AutoReconnect('localhost:27017: [Errno 111] Connection refused (configured timeouts: socketTimeoutMS: 10000.0ms, connectTimeoutMS: 10000.0ms)')>]>
+ERROR    Medisync.DB:database.py:96 MongoDB unavailable — running in offline mode. Auth/DB features disabled.
+INFO     Medisync.Main:main.py:80 APScheduler SKIPPED (SCHEDULER_ENABLED=false). Ensure a dedicated scheduler container is running.
+INFO     Medisync.EventBus:bus.py:22 Subscribed on_dose_event to adherence.dose_taken
+INFO     Medisync.EventBus:bus.py:22 Subscribed on_dose_event to adherence.dose_missed
+INFO     Medisync.EventBus:bus.py:22 Subscribed on_dose_event to adherence.dose_skipped
+INFO     Medisync.EventBus:bus.py:22 Subscribed on_escalation_event to escalation.triggered
+INFO     Medisync.EventBus:bus.py:22 Subscribed on_ai_response to ai.response_generated
+INFO     Medisync.Main:main.py:95 Analytics event bus subscribers registered.
+INFO     Medisync.Main:main.py:96 ✅ Medisync API is ready.
+INFO     Medisync.Auth:auth_service.py:71 JWT token created for user: test@medisync.app
+----------------------------- Captured stderr call -----------------------------
+2026-05-14 10:26:38 |          | Medisync.Main            | INFO     | POST /mark-done → 503 [2ms]
+2026-05-14 10:26:38 |          | Medisync.Main            | INFO     | POST /mark-done → 503 [1ms]
+------------------------------ Captured log call -------------------------------
+INFO     Medisync.Main:main.py:146 POST /mark-done → 503 [2ms]
+INFO     Medisync.Main:main.py:146 POST /mark-done → 503 [1ms]
+--------------------------- Captured stderr teardown ---------------------------
+2026-05-14 10:26:38 |          | Medisync.Main            | INFO     | Medisync API shutting down...
+2026-05-14 10:26:38 |          | Medisync.Main            | INFO     | Shutdown complete.
+---------------------------- Captured log teardown -----------------------------
+INFO     Medisync.Main:main.py:101 Medisync API shutting down...
+INFO     Medisync.Main:main.py:104 Shutdown complete.
+=============================== warnings summary ===============================
+venv/lib/python3.12/site-packages/mongomock/__version__.py:1
+  /home/prince/Desktop/medisyne/backend/venv/lib/python3.12/site-packages/mongomock/__version__.py:1: DeprecationWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html
+    import pkg_resources
+
+venv/lib/python3.12/site-packages/pkg_resources/__init__.py:2832
+  /home/prince/Desktop/medisyne/backend/venv/lib/python3.12/site-packages/pkg_resources/__init__.py:2832: DeprecationWarning: Deprecated call to `pkg_resources.declare_namespace('google')`.
+  Implementing implicit namespace packages (as specified in PEP 420) is preferred to `pkg_resources.declare_namespace`. See https://setuptools.pypa.io/en/latest/references/keywords.html#keyword-namespace-packages
+    declare_namespace(pkg)
+
+tests/integration/test_idempotency.py::test_duplicate_mark_done_is_idempotent
+tests/integration/test_idempotency.py::test_duplicate_missed_does_not_override_taken
+  /home/prince/Desktop/medisyne/backend/venv/lib/python3.12/site-packages/httpx/_client.py:680: DeprecationWarning: The 'app' shortcut is now deprecated. Use the explicit style 'transport=WSGITransport(app=...)' instead.
+    warnings.warn(message, DeprecationWarning)
+
+tests/integration/test_idempotency.py::test_duplicate_mark_done_is_idempotent
+tests/integration/test_idempotency.py::test_duplicate_missed_does_not_override_taken
+  /home/prince/Desktop/medisyne/backend/services/auth_service.py:66: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    expire = datetime.utcnow() + (
+
+tests/integration/test_idempotency.py::test_duplicate_mark_done_is_idempotent
+tests/integration/test_idempotency.py::test_duplicate_missed_does_not_override_taken
+tests/integration/test_idempotency.py::test_duplicate_missed_does_not_override_taken
+  /home/prince/Desktop/medisyne/backend/venv/lib/python3.12/site-packages/jose/jwt.py:311: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    now = timegm(datetime.utcnow().utctimetuple())
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/integration/test_idempotency.py::test_duplicate_mark_done_is_idempotent
+FAILED tests/integration/test_idempotency.py::test_duplicate_missed_does_not_override_taken
+======================== 2 failed, 9 warnings in 20.18s ========================

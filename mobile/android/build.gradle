@@ -9,7 +9,6 @@ buildscript {
     classpath('com.android.tools.build:gradle')
     classpath('com.facebook.react:react-native-gradle-plugin')
     classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
-    classpath('com.google.gms:google-services:4.4.2')
   }
 }
 
@@ -18,7 +17,10 @@ allprojects {
     google()
     mavenCentral()
     maven { url 'https://www.jitpack.io' }
-    maven { url "$rootDir/../node_modules/@notifee/react-native/android/libs" }
+    // Notifee local Maven repo (ships .aar inside node_modules)
+    maven {
+      url "$rootDir/../node_modules/@notifee/react-native/android/libs"
+    }
   }
 }
 

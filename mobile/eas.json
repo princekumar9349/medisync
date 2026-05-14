@@ -8,11 +8,19 @@
       "developmentClient": true,
       "distribution": "internal"
     },
-    "preview": {
-      "distribution": "internal"
+    "staging": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://staging-api.medisync.app",
+        "EXPO_PUBLIC_ENV": "staging"
+      }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.medisync.app",
+        "EXPO_PUBLIC_ENV": "production"
+      }
     }
   },
   "submit": {

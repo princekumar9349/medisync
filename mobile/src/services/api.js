@@ -12,20 +12,23 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
 // ─── Config ────────────────────────────────────────────────────────────────────
-const ENV = 'PROD'; // 'DEV', 'STAGING', 'PROD'
-const LOCAL_WIFI_IP = '192.168.1.13'; // Replace with your local IP if testing on physical device
+const ENV = process.env.EXPO_PUBLIC_ENV || (__DEV__ ? 'DEV' : 'PROD');
+const LOCAL_WIFI_IP = '192.168.1.13'; // fallback for iOS/web
 
 const getApiBase = () => {
+  if (process.env.EXPO_PUBLIC_API_URL) return process.env.EXPO_PUBLIC_API_URL;
   if (ENV === 'PROD') return 'https://backend-520988526649.asia-south1.run.app';
   if (ENV === 'STAGING') return 'https://medisync-staging.run.app';
   if (Platform.OS === 'android') {
-    return Constants.isDevice ? `http://${LOCAL_WIFI_IP}:8000` : 'http://10.0.2.2:8000';
+    // Always use localhost for Android DEV — works via `adb reverse tcp:8000 tcp:8000`
+    // This forwards phone's localhost:8000 → PC's port 8000 (works for real device + emulator)
+    return 'http://localhost:8000';
   }
-  return `http://${LOCAL_WIFI_IP}:8000`;
+  return `http://${LOCAL_WIFI_IP}:8000`; // iOS / web fallback
 };
 
 export const API_BASE = getApiBase();
-console.log(`[Network] Environment: ${ENV}, API_BASE: ${API_BASE}`);
+if (__DEV__) console.log(`[Network] Environment: ${ENV}, API_BASE: ${API_BASE}`);
 
 const TOKEN_KEY = 'medisync_token';
 const USER_KEY = 'medisync_user';
@@ -138,7 +141,23 @@ async function apiFetch(path, options = {}, authenticated = true, retries = MAX_
   }
 }
 
-// ─── Auth ──────────────────────────────────────────────────────────────────────
+// ─── Generic Helpers ──────────────────────────────────────────────────────────
+
+/** Authenticated GET to any path. Returns parsed JSON. */
+export async function apiGet(path) {
+  return apiFetch(path, { method: 'GET' });
+}
+
+/** Authenticated POST to any path with a JSON body. Returns parsed JSON. */
+export async function apiPost(path, body) {
+  return apiFetch(path, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
 
 export async function apiRegister(name, email, password, role = 'patient', phone = null, specialization = null, verifyPhoneNow = false) {
   return apiFetch('/auth/register', {
@@ -179,11 +198,18 @@ export async function apiCaretakerLogin(patient_id, caretaker_pin) {
   // Store caretaker context so dashboard can show patient info
   await AsyncStorage.setItem('medisync_caretaker_ctx', JSON.stringify({
     linked_patient_id: data.linked_patient_id,
-    patient_name:      data.patient_name,
-    expires_in:        data.expires_in,
-    logged_at:         Date.now(),
+    patient_name: data.patient_name,
+    expires_in: data.expires_in,
+    logged_at: Date.now(),
   }));
   return data;
+}
+
+export async function apiVerifyCaretakerPin(patient_id, caretaker_pin) {
+  return apiFetch('/auth/verify-caretaker-pin', {
+    method: 'POST',
+    body: JSON.stringify({ patient_id, caretaker_pin }),
+  });
 }
 
 /** Request a password reset code via email (no auth required) */
@@ -294,22 +320,29 @@ export async function apiGetInsights() {
 
 // ─── Scan ──────────────────────────────────────────────────────────────────────
 
-export async function apiScan(imageUri, mimeType = 'image/jpeg', fileName = 'prescription.jpg') {
+export async function apiScan(imageUris) {
+  // Supports single string or array of strings
+  const uris = Array.isArray(imageUris) ? imageUris : [imageUris];
+  
   const token = await getToken();
   const headers = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
   const formData = new FormData();
-  if (Platform.OS === 'web') {
-    const response = await fetch(imageUri);
-    const blob = await response.blob();
-    formData.append('file', blob, fileName);
-  } else {
-    formData.append('file', {
-      uri: imageUri,
-      type: mimeType,
-      name: fileName,
-    });
+  
+  for (let i = 0; i < uris.length; i++) {
+    const uri = uris[i];
+    if (Platform.OS === 'web') {
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      formData.append('files', blob, `prescription_${i}.jpg`);
+    } else {
+      formData.append('files', {
+        uri: uri,
+        type: 'image/jpeg',
+        name: `prescription_${i}.jpg`,
+      });
+    }
   }
 
   const res = await fetch(`${API_BASE}/scan`, {
@@ -320,10 +353,14 @@ export async function apiScan(imageUri, mimeType = 'image/jpeg', fileName = 'pre
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `Scan failed (${res.status})`);
+    throw new Error(err.detail || `Scan enqueue failed (${res.status})`);
   }
 
-  return res.json();
+  return res.json(); // returns { job_id, status }
+}
+
+export async function apiPollScanStatus(job_id) {
+  return apiFetch(`/scan/status/${job_id}`);
 }
 
 // ─── Tracking ──────────────────────────────────────────────────────────────────
@@ -653,8 +690,10 @@ export async function apiMarkNotificationsRead(ids = [], markAll = false) {
 }
 
 /** Record notification analytics event */
-export async function apiNotificationAnalytics(notificationId, event) {
-  return apiFetch(`/notifications/analytics/${notificationId}?event=${event}`, {
+export async function apiNotificationAnalytics(notificationId, event, authoritative_time = null) {
+  let url = `/notifications/analytics/${notificationId}?event=${event}`;
+  if (authoritative_time) url += `&authoritative_time=${encodeURIComponent(authoritative_time)}`;
+  return apiFetch(url, {
     method: 'POST',
   });
 }
@@ -673,17 +712,17 @@ export async function apiUpdateNotificationPreferences(prefs) {
 }
 
 /** Mark a dose as taken (quick action from notification) */
-export async function apiMarkDoseTaken(med_id, slot = '') {
+export async function apiMarkDoseTaken(med_id, slot = '', authoritative_time = null) {
   return apiFetch('/tracking/mark-done', {
     method: 'POST',
-    body: JSON.stringify({ med_id, slot, status: 'taken' }),
+    body: JSON.stringify({ med_id, slot, status: 'taken', authoritative_time }),
   });
 }
 
 /** Mark a dose as skipped (quick action from notification) */
-export async function apiMarkDoseSkipped(med_id, slot = '') {
+export async function apiMarkDoseSkipped(med_id, slot = '', authoritative_time = null) {
   return apiFetch('/tracking/mark-done', {
     method: 'POST',
-    body: JSON.stringify({ med_id, slot, status: 'skipped' }),
+    body: JSON.stringify({ med_id, slot, status: 'skipped', authoritative_time }),
   });
 }

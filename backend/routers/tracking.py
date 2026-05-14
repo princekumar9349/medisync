@@ -22,10 +22,10 @@ from services.auth_service import get_current_user, require_patient
 logger = logging.getLogger("Medisync.Tracking")
 router = APIRouter(tags=["Medication Tracking"])
 
-# ─── IST timezone ─────────────────────────────────────────────────────────────
+# IST timezone 
 IST = timezone(timedelta(hours=5, minutes=30))
 
-# ─── Slot Window Definitions (IST hours, minutes) ────────────────────────────
+#  Slot Window Definitions (IST hours, minutes) 
 # Each slot: (active_open, late_open, missed_after) — all in IST local time
 SLOT_WINDOWS = {
     "morning":   {"open": (7, 0),  "late": (9, 0),  "close": (11, 0),  "label": "07:00", "late_label": "09:00", "close_label": "11:00"},
@@ -61,7 +61,7 @@ def _compute_dose_state(slot_key: str, log_status: Optional[str]) -> dict:
     if slot_key == "night" and w["close"] == (23, 30):
         t_close = _ist_today_ts(23, 30)
 
-    # ── Already logged today ──────────────────────────────────────────────
+    # Already logged today 
     if log_status in ("taken", "skipped"):
         return {
             "status": log_status,
@@ -69,7 +69,7 @@ def _compute_dose_state(slot_key: str, log_status: Optional[str]) -> dict:
             "can_skip": False,
         }
 
-    # ── Pending — determine by current time ───────────────────────────────
+    # Pending  determine by current time 
     if now_ist < t_open:
         return {"status": "upcoming", "can_take": False, "can_skip": False}
     elif t_open <= now_ist < t_late:
@@ -116,7 +116,7 @@ def _resolve_target_slots(med: dict) -> list:
     return target_slots or ["morning"]
 
 
-# ─── GET /pillbox ─────────────────────────────────────────────────────────────
+# GET /pillbox 
 
 @router.get("/pillbox", summary="Get pillbox slots with IST-aware dose states")
 def get_pillbox(current_user: TokenData = Depends(get_current_user)):
@@ -173,7 +173,7 @@ def get_pillbox(current_user: TokenData = Depends(get_current_user)):
                         "is_critical":  is_crit,
                     }
                     dose_logs_col.insert_one(missed_doc)
-                    logger.info(f"⚠️  Auto-missed {name} ({slot_key}) for {current_user.user_id[:8]}")
+                    logger.info(f"  Auto-missed {name} ({slot_key}) for {current_user.user_id[:8]}")
 
                 w = SLOT_WINDOWS[slot_key]
                 entry = {
@@ -214,7 +214,7 @@ def get_pillbox(current_user: TokenData = Depends(get_current_user)):
     }
 
 
-# ─── POST /mark-done ──────────────────────────────────────────────────────────
+# POST /mark-done 
 
 @router.post("/mark-done", summary="Log a dose as taken, missed, or skipped")
 def mark_done(
@@ -235,7 +235,7 @@ def mark_done(
     if dose_logs_col is None:
         raise HTTPException(status_code=503, detail="Database unavailable.")
 
-    # ── Prevent duplicate logs (idempotency) ─────────────────────────────────
+    #  Prevent duplicate logs (idempotency) 
     existing = _get_today_log(dose_logs_col, current_user.user_id, payload.med_id)
     if existing and existing["status"] in ("taken", "skipped"):
         return {
@@ -245,7 +245,7 @@ def mark_done(
             "duplicate": True,
         }
 
-    # ── Infer slot from existing schedule if not provided ────────────────────
+    # Infer slot from existing schedule if not provided 
     slot_key = None
     medicine_name = payload.med_id
     is_critical = False
@@ -263,7 +263,7 @@ def mark_done(
                         slot_key = slots[0]
                     break
 
-    # ── Time-window validation for "taken" action ─────────────────────────────
+    # Time-window validation for "taken" action 
     if payload.status == "taken" and slot_key:
         state = _compute_dose_state(slot_key, None)
         if not state["can_take"]:
@@ -272,7 +272,7 @@ def mark_done(
                 detail=f"Cannot mark as taken — the {slot_key} window has expired. Dose is now '{state['status']}'.",
             )
 
-    # ── Calculate delay minutes ───────────────────────────────────────────────
+    #  Calculate delay minutes 
     delay_minutes = 0
     if payload.status == "taken" and slot_key:
         w = SLOT_WINDOWS[slot_key]
@@ -295,7 +295,7 @@ def mark_done(
 
     try:
         dose_logs_col.insert_one(log_doc)
-        logger.info(f"✅ Dose: {payload.med_id} → {payload.status} for {current_user.user_id[:8]}")
+        logger.info(f"Dose: {payload.med_id} → {payload.status} for {current_user.user_id[:8]}")
     except Exception as e:
         logger.error(f"Dose log save failed: {e}")
         raise HTTPException(status_code=500, detail="Failed to save dose log.")
@@ -308,7 +308,7 @@ def mark_done(
     }
 
 
-# ─── DELETE /expired ──────────────────────────────────────────────────────────
+# DELETE /expired 
 
 @router.delete("/expired", summary="Remove expired prescriptions for the current user")
 def delete_expired(current_user: TokenData = Depends(get_current_user)):
@@ -336,7 +336,7 @@ def delete_expired(current_user: TokenData = Depends(get_current_user)):
     return {"message": f"Deleted {deleted_count} expired prescription(s).", "deleted_count": deleted_count}
 
 
-# ─── DELETE /prescription/{rx_id}/medicine/{med_index} ───────────────────────
+# DELETE /prescription/{rx_id}/medicine/{med_index} 
 
 @router.delete(
     "/prescription/{rx_id}/medicine/{med_index}",
@@ -398,7 +398,7 @@ def patient_delete_medicine(
     }
 
 
-# ─── POST /symptoms ───────────────────────────────────────────────────────────
+#  POST /symptoms 
 
 @router.post("/symptoms", summary="Report a symptom")
 def add_symptom(payload: SymptomCreate, current_user: TokenData = Depends(require_patient)):
@@ -417,7 +417,7 @@ def add_symptom(payload: SymptomCreate, current_user: TokenData = Depends(requir
     return {"message": "Symptom logged successfully."}
 
 
-# ─── GET /medicine/analytics ──────────────────────────────────────────────────
+# ─── GET /medicine/analytics 
 
 from models.schemas import AdherenceAnalyticsResponse, DailyLogPoint
 from collections import defaultdict
@@ -501,7 +501,7 @@ def get_medicine_analytics(days: int = 30, current_user: TokenData = Depends(get
     )
 
 
-# ─── GET /medicine/smart-report ───────────────────────────────────────────────
+# ─── GET /medicine/smart-report 
 
 from models.schemas import SmartReportResponse
 from services.llm_service import generate_smart_adherence_report

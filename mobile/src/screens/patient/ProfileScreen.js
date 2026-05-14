@@ -9,9 +9,10 @@ import { useNavigation, CommonActions } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
 import AppHeader from '../../components/AppHeader';
-import { apiUpdateMe } from '../../services/api';
+import { apiUpdateMe, apiVerifyCaretakerPin } from '../../services/api';
 import { COLORS, FONTS, SPACING, RADIUS, S } from '../../theme';
 import NotificationService from '../../services/NotificationService';
+import { useUIStore } from '../../store/uiStore';
 
 const AUTH_KEYS = ['medisync_token', 'medisync_user', 'medisync_ui_role', 'medisync_caretaker_ctx'];
 
@@ -149,8 +150,12 @@ export default function ProfileScreen() {
   const [voiceOn,   setVoiceOn]   = useState(false);
   const [language,  setLanguage]  = useState('EN');
   const [editOpen,  setEditOpen]  = useState(false);
+  const { isElderlyMode, setElderlyMode, isHighContrast, setHighContrast } = useUIStore();
 
   const [localUser, setLocalUser] = useState(user);
+  const [cgModalOpen, setCgModalOpen] = useState(false);
+  const [cgPin, setCgPin] = useState('');
+  const [cgVerifying, setCgVerifying] = useState(false);
 
   // Merge saved payload back into local display state
   function handleSaved(payload) {
@@ -188,6 +193,22 @@ export default function ProfileScreen() {
         ],
         { cancelable: true }
       );
+    }
+  }
+
+  async function handleSwitchToCaregiver() {
+    if (!cgPin.trim()) return;
+    setCgVerifying(true);
+    try {
+      await apiVerifyCaretakerPin(display?.patient_id, cgPin);
+      setCgModalOpen(false);
+      setCgPin('');
+      // Fast switch!
+      login(localUser, 'caretaker');
+    } catch (e) {
+      Alert.alert('Access Denied', e.message || 'Incorrect PIN or Caretaker access disabled.');
+    } finally {
+      setCgVerifying(false);
     }
   }
 
@@ -271,9 +292,18 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         )}
 
+        {/* Caregiver Switch */}
+        <View style={S.card}>
+          <ActionRow icon="shield-checkmark" label="Switch to Caregiver View" description="Requires Caregiver PIN" accent="#D97706" onPress={() => setCgModalOpen(true)} />
+        </View>
+
         {/* General Settings */}
         <Text style={S.sectionTitle}>General Settings</Text>
         <View style={S.card}>
+          <ToggleRow icon="text" label="Elderly Mode" description="Larger text and buttons" value={isElderlyMode} onValueChange={setElderlyMode} />
+          <View style={S.divider} />
+          <ToggleRow icon="contrast" label="High Contrast" description="Maximum readability" value={isHighContrast} onValueChange={setHighContrast} />
+          <View style={S.divider} />
           <ToggleRow icon="volume-high" label="Voice Output" description="Speak scan results aloud" value={voiceOn}
             onValueChange={v => { setVoiceOn(v); if (v) Speech.speak('Voice enabled', { language: 'en-IN' }); }} />
           <View style={S.divider} />
@@ -285,6 +315,9 @@ export default function ProfileScreen() {
           <View style={S.divider} />
           <ActionRow icon="heart" label="Caretaker Access" description="Manage PIN and family caretaker access"
             accent="#D97706" onPress={() => navigation.navigate('CaretakerSettings')} />
+          <View style={S.divider} />
+          <ActionRow icon="shield-checkmark" label="Data & Privacy" description="Export data, policies, and permissions"
+            accent={COLORS.brand600} onPress={() => navigation.navigate('DataPrivacySettings')} />
         </View>
 
 
@@ -304,6 +337,8 @@ export default function ProfileScreen() {
           <ActionRow icon="battery-charging" label="Battery Optimizations" description="Disable to fix notification delays" accent={COLORS.red500} onPress={checkBatteryOptimizations} />
           <View style={S.divider} />
           <ActionRow icon="settings-outline" label="Auto-Start / Power Manager" description="Fix for Realme/Xiaomi devices" accent={COLORS.red500} onPress={openPowerManager} />
+          <View style={S.divider} />
+          <ActionRow icon="pulse" label="Notification Diagnostics" description="Fix missing medicine reminders" accent={COLORS.emerald500} onPress={() => navigation.navigate('NotificationDiagnostics')} />
         </View>
 
         {/* About */}
@@ -331,6 +366,32 @@ export default function ProfileScreen() {
         onClose={() => setEditOpen(false)}
         onSaved={handleSaved}
       />
+
+      {/* Caregiver PIN Modal */}
+      <Modal visible={cgModalOpen} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: '#fff', padding: 24, borderRadius: 20, width: '100%', maxWidth: 320 }}>
+            <Text style={{ fontSize: 18, fontWeight: '800', marginBottom: 16, color: '#333' }}>Enter Caregiver PIN</Text>
+            <TextInput
+              style={[S.input, { textAlign: 'center', fontSize: 24, letterSpacing: 8 }]}
+              keyboardType="number-pad"
+              secureTextEntry
+              maxLength={6}
+              value={cgPin}
+              onChangeText={setCgPin}
+              autoFocus
+            />
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
+              <TouchableOpacity style={{ flex: 1, padding: 12, alignItems: 'center', backgroundColor: '#f1f5f9', borderRadius: 10 }} onPress={() => setCgModalOpen(false)}>
+                <Text style={{ fontWeight: '700', color: '#64748b' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{ flex: 1, padding: 12, alignItems: 'center', backgroundColor: '#D97706', borderRadius: 10 }} onPress={handleSwitchToCaregiver}>
+                {cgVerifying ? <ActivityIndicator size="small" color="#fff" /> : <Text style={{ fontWeight: '700', color: '#fff' }}>Access</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
 
   );

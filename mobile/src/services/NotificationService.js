@@ -18,43 +18,45 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 let notifee = null;
 let AndroidImportance = {};
 let AndroidVisibility = {};
-let AndroidCategory  = {};
-let TriggerType      = {};
+let AndroidCategory = {};
+let TriggerType = {};
 let AuthorizationStatus = {};
 let EventType = {};
+let AndroidStyle = {};
 
 try {
   const mod = require('@notifee/react-native');
-  notifee             = mod.default;
-  AndroidImportance   = mod.AndroidImportance   || {};
-  AndroidVisibility   = mod.AndroidVisibility   || {};
-  AndroidCategory     = mod.AndroidCategory     || {};
-  TriggerType         = mod.TriggerType         || {};
+  notifee = mod.default;
+  AndroidImportance = mod.AndroidImportance || {};
+  AndroidVisibility = mod.AndroidVisibility || {};
+  AndroidCategory = mod.AndroidCategory || {};
+  TriggerType = mod.TriggerType || {};
   AuthorizationStatus = mod.AuthorizationStatus || {};
-  EventType           = mod.EventType           || {};
+  EventType = mod.EventType || {};
+  AndroidStyle = mod.AndroidStyle || {};
 } catch {
   console.warn('[NotificationService] notifee not available (Expo Go) — degraded mode');
 }
 
 // ─── Channel IDs ─────────────────────────────────────────────────────────────
 export const CH = {
-  MEDICINE:   'med-reminder',
-  DOCTOR:     'doctor-messages',
-  EMERGENCY:  'emergency',
-  AI:         'ai-warnings',
-  CARETAKER:  'caretaker',
-  SYSTEM:     'system',
-  COUNTDOWN:  'medisync-foreground',
+  MEDICINE: 'med-reminder',
+  DOCTOR: 'doctor-messages',
+  EMERGENCY: 'emergency',
+  AI: 'ai-warnings',
+  CARETAKER: 'caretaker',
+  SYSTEM: 'system',
+  COUNTDOWN: 'medisync-foreground',
 };
 
 // ─── Severity colors ──────────────────────────────────────────────────────────
 const COLORS = {
-  medicine:   '#0D9488',  // teal
-  doctor:     '#4338CA',  // indigo
-  emergency:  '#DC2626',  // red
+  medicine: '#0D9488',  // teal
+  doctor: '#4338CA',  // indigo
+  emergency: '#DC2626',  // red
   ai_warning: '#7C3AED',  // purple
-  caretaker:  '#D97706',  // amber
-  system:     '#475569',  // slate
+  caretaker: '#D97706',  // amber
+  system: '#475569',  // slate
 };
 
 // ─── Silent hours check ───────────────────────────────────────────────────────
@@ -69,7 +71,7 @@ async function _isInSilentHours() {
     const [eh, em] = prefs.silent_hours_end.split(':').map(Number);
     const nowMin = now.getHours() * 60 + now.getMinutes();
     const startMin = sh * 60 + sm;
-    const endMin   = eh * 60 + em;
+    const endMin = eh * 60 + em;
     if (startMin > endMin) {
       return nowMin >= startMin || nowMin < endMin;
     }
@@ -102,25 +104,39 @@ class NotificationService {
 
   async openExactAlarmSettings() {
     if (!notifee || Platform.OS !== 'android') return;
-    try { await notifee.openAlarmPermissionSettings(); } catch {}
+    try { await notifee.openAlarmPermissionSettings(); } catch { }
   }
 
   async checkBatteryOptimizations() {
-    if (!notifee || Platform.OS !== 'android') return;
+    if (!notifee || Platform.OS !== 'android') return false;
     try {
       const enabled = await notifee.isBatteryOptimizationEnabled();
       if (enabled) console.warn('[NS] Battery optimization is ON — notifications may be delayed');
-    } catch {}
+      return enabled;
+    } catch { return false; }
+  }
+
+  async getNotificationSettings() {
+    if (!notifee) return { isAuthorized: false };
+    try {
+      const settings = await notifee.getNotificationSettings();
+      return {
+        isAuthorized: settings.authorizationStatus === AuthorizationStatus.AUTHORIZED,
+        raw: settings
+      };
+    } catch {
+      return { isAuthorized: false };
+    }
   }
 
   async openBatterySettings() {
     if (!notifee || Platform.OS !== 'android') return;
-    try { await notifee.openBatteryOptimizationSettings(); } catch {}
+    try { await notifee.openBatteryOptimizationSettings(); } catch { }
   }
 
   async openPowerManagerSettings() {
     if (!notifee || Platform.OS !== 'android') return;
-    try { await notifee.openPowerManagerSettings(); } catch {}
+    try { await notifee.openPowerManagerSettings(); } catch { }
   }
 
   // ── Channel Creation ─────────────────────────────────────────────────────────
@@ -202,6 +218,7 @@ class NotificationService {
       return null;
     }
     try {
+      await AsyncStorage.setItem('@medisync_last_notif_time', String(Date.now()));
       return await notifee.displayNotification(config);
     } catch (e) {
       console.warn('[NS] displayNotification error:', e.message);
@@ -249,7 +266,7 @@ class NotificationService {
       for (let stage = 0; stage <= 3; stage++) {
         await notifee.cancelNotification(`med_${medId}_stage${stage}`);
       }
-    } catch {}
+    } catch { }
   }
 
   // ── Doctor Message ────────────────────────────────────────────────────────────
@@ -350,63 +367,198 @@ class NotificationService {
     });
   }
 
-  // ── Scheduled Trigger ─────────────────────────────────────────────────────────
-  async scheduleMedicineReminder(med, triggerTimeMs) {
+  // ── Live Tracker Trigger ──────────────────────────────────────────────────────
+  async scheduleLiveTrackerEvents(med, targetTimeMs) {
     if (!notifee) return;
+    const medId = med.med_id || med._id || med.name;
+    const fifteenMins = 15 * 60 * 1000;
+    const fiveMins = 5 * 60 * 1000;
+
+    const commonActions = [
+      { title: '✅ TAKE NOW', pressAction: { id: 'action_taken' } },
+      { title: '⏰ SNOOZE', pressAction: { id: 'action_snooze' } },
+      { title: '⏭️ SKIP', pressAction: { id: 'action_skip' } },
+    ];
+
+    // Smart context selection
+    const smartMessages = [
+      `Taking this now protects your adherence streak.`,
+      `You completed this medicine on time yesterday.`,
+      `Stay consistent to reach your health goals.`,
+      `One more dose for a perfect day!`,
+    ];
+    const smartContext = smartMessages[Math.floor(Math.random() * smartMessages.length)];
+
+    // Future-ready payload for Apple Live Activities / Wearables / Widgets
+    const futurePayload = {
+      medName: med.name,
+      targetTimeMs,
+      dosage: med.dosage || '1 dose',
+      priority: med.critical ? 'high' : 'normal',
+      enableWearableSync: true,
+      widgetAction: 'OPEN_TRACKER',
+    };
+
+    const baseData = { 
+      medicineId: medId, 
+      type: 'medicine_tracker',
+      trackerPayload: JSON.stringify(futurePayload),
+      scheduled_for: String(targetTimeMs) // Add exact target for drift detection
+    };
+
+    // Rich HTML formatting for Android BigText
+    const priorityBadge = med.critical ? `<b>🚨 CRITICAL PRIORITY</b><br/><br/>` : '';
+    const expandedBody = `${priorityBadge}` +
+      `<b>💊 Dosage:</b> ${med.dosage || '1 dose'}<br/>` +
+      `<b>🍽️ Food:</b> ${med.food_instructions || 'As prescribed'}<br/>` +
+      `<b>👨‍⚕️ Notes:</b> ${med.notes || 'None'}<br/>` +
+      `<b>🔥 Impact:</b> ${smartContext}`;
+
     try {
-      await notifee.createTriggerNotification(
-        {
-          id: `med_${med.med_id || med._id || med.name}_stage0`,
-          title: `💊 Time for ${med.name}`,
-          body: `Take your ${med.dosage || 'dose'} now.`,
-          data: { medicineId: med.med_id || med._id || med.name, stage: '0', type: 'medicine' },
+      // Clean up previous triggers for this medicine
+      await this.cancelLiveTracker(medId);
+
+      // 1. SAFE Mode (T-15m)
+      if (targetTimeMs - fifteenMins > Date.now()) {
+        await notifee.createTriggerNotification({
+          id: `tracker_${medId}`,
+          title: `💊 ${med.name} Window Open`,
+          body: `Closes in`,
+          data: { ...baseData, state: 'SAFE' },
           android: {
-            channelId: CH.MEDICINE,
+            channelId: CH.COUNTDOWN, // Low importance, silent
             smallIcon: 'ic_launcher',
             color: COLORS.medicine,
-            category: AndroidCategory.ALARM ?? 'alarm',
+            ongoing: true,
+            autoCancel: false,
+            showChronometer: true,
+            chronometerDirection: 'down',
+            timestamp: targetTimeMs,
+            style: { type: AndroidStyle.BIGTEXT ?? 1, text: expandedBody },
+            actions: commonActions,
             pressAction: { id: 'default' },
-            actions: [
-              { title: '✅ Taken', pressAction: { id: 'action_taken' } },
-              { title: '⏰ Snooze 10m', pressAction: { id: 'action_snooze' } },
-              { title: '⏭️ Skip', pressAction: { id: 'action_skip' } },
-            ],
-          },
-        },
-        { type: TriggerType.TIMESTAMP ?? 0, timestamp: triggerTimeMs, alarmManager: { allowWhileIdle: true } }
-      );
+            group: 'medisync_live_trackers',
+            sortKey: med.critical ? '0' : '1',
+          }
+        }, { type: TriggerType.TIMESTAMP ?? 0, timestamp: targetTimeMs - fifteenMins, alarmManager: { allowWhileIdle: true } });
+      }
+
+      // 2. DUE SOON Mode (T-5m)
+      if (targetTimeMs - fiveMins > Date.now()) {
+        await notifee.createTriggerNotification({
+          id: `tracker_${medId}`,
+          title: `⚠️ ${med.name} Due Soon`,
+          body: `Closes in`,
+          data: { ...baseData, state: 'DUE_SOON' },
+          android: {
+            channelId: CH.COUNTDOWN, // Keeps the chronometer going silently
+            smallIcon: 'ic_launcher',
+            color: '#D97706', // Amber
+            ongoing: true,
+            autoCancel: false,
+            showChronometer: true,
+            chronometerDirection: 'down',
+            timestamp: targetTimeMs,
+            style: { type: AndroidStyle.BIGTEXT ?? 1, text: expandedBody },
+            actions: commonActions,
+            pressAction: { id: 'default' },
+            group: 'medisync_live_trackers',
+            sortKey: med.critical ? '0' : '1',
+          }
+        }, { type: TriggerType.TIMESTAMP ?? 0, timestamp: targetTimeMs - fiveMins, alarmManager: { allowWhileIdle: true } });
+
+        // Secondary brief alert for vibration
+        await notifee.createTriggerNotification({
+          id: `tracker_alert_${medId}_5m`,
+          title: `Medicine Due Soon`,
+          body: `Window for ${med.name} closes in 5 minutes.`,
+          android: {
+            channelId: CH.MEDICINE, // High importance, vibrate
+            smallIcon: 'ic_launcher',
+            color: '#D97706',
+            autoCancel: true,
+            timeoutAfter: 5000,
+          }
+        }, { type: TriggerType.TIMESTAMP ?? 0, timestamp: targetTimeMs - fiveMins, alarmManager: { allowWhileIdle: true } });
+      }
+
+      // 3. CRITICAL Mode (T-0m)
+      if (targetTimeMs > Date.now()) {
+        await notifee.createTriggerNotification({
+          id: `tracker_${medId}`,
+          title: `🚨 ${med.name} Critical`,
+          body: `Window expired`,
+          data: { ...baseData, state: 'CRITICAL' },
+          android: {
+            channelId: CH.EMERGENCY, // Heads up
+            smallIcon: 'ic_launcher',
+            color: COLORS.emergency, // Red
+            ongoing: true,
+            autoCancel: false,
+            style: { type: AndroidStyle.BIGTEXT ?? 1, text: expandedBody },
+            actions: commonActions,
+            pressAction: { id: 'default' },
+            group: 'medisync_live_trackers',
+            sortKey: '0', // Critical always floats to top
+          }
+        }, { type: TriggerType.TIMESTAMP ?? 0, timestamp: targetTimeMs, alarmManager: { allowWhileIdle: true } });
+      }
+
+      // 4. Missed Dose Escalation Trigger (T+10m)
+      await notifee.createTriggerNotification({
+        id: `tracker_missed_${medId}`,
+        title: `❌ ${med.name} Missed`,
+        body: `You missed your medicine window. Adherence impacted.`,
+        data: { ...baseData, state: 'MISSED' },
+        android: {
+          channelId: CH.EMERGENCY,
+          smallIcon: 'ic_launcher',
+          color: COLORS.system,
+          autoCancel: true,
+          style: { type: AndroidStyle.BIGTEXT ?? 1, text: `The window to take <b>${med.name}</b> has expired. It has been marked as missed in your logs.<br/><br/>If you still take it, you can update it in the app.` },
+          pressAction: { id: 'default' },
+          group: 'medisync_live_trackers',
+          sortKey: '2', // Missed drops to bottom of group
+        }
+      }, { type: TriggerType.TIMESTAMP ?? 0, timestamp: targetTimeMs + (10 * 60 * 1000), alarmManager: { allowWhileIdle: true } });
+
+      // 5. Update the Group Summary Notification
+      await notifee.displayNotification({
+        id: 'tracker_summary',
+        title: 'Active Medicine Trackers',
+        body: 'You have active medicine windows.',
+        android: {
+          channelId: CH.COUNTDOWN,
+          groupSummary: true,
+          group: 'medisync_live_trackers',
+          smallIcon: 'ic_launcher',
+          color: COLORS.medicine,
+        }
+      });
+
     } catch (e) {
-      console.warn('[NS] scheduleMedicineReminder error:', e.message);
+      console.warn('[NS] scheduleLiveTrackerEvents error:', e.message);
     }
   }
 
-  // ── Foreground countdown ──────────────────────────────────────────────────────
-  async updateForegroundCountdown(medicineName, timeRemainingStr) {
-    if (!notifee || Platform.OS !== 'android') return;
-    try {
-      await notifee.displayNotification({
-        id: 'live-countdown',
-        title: 'Next Medicine',
-        body: `${medicineName} in ${timeRemainingStr}`,
-        android: {
-          channelId: CH.COUNTDOWN,
-          smallIcon: 'ic_launcher',
-          color: COLORS.medicine,
-          ongoing: true,
-          asForegroundService: true,
-        },
-      });
-    } catch {}
-  }
-
-  async cancelLiveCountdown() {
+  async cancelLiveTracker(medId) {
     if (!notifee) return;
-    try { await notifee.stopForegroundService(); } catch {}
+    try {
+      // Cancel pending triggers
+      const triggers = await notifee.getTriggerNotificationIds();
+      const idsToCancel = triggers.filter(id => id.includes(`tracker_${medId}`) || id.includes(`tracker_alert_${medId}`) || id.includes(`tracker_missed_${medId}`));
+      if (idsToCancel.length > 0) {
+        await notifee.cancelTriggerNotifications(idsToCancel);
+      }
+      // Cancel active notifications
+      await notifee.cancelNotification(`tracker_${medId}`);
+      await notifee.cancelNotification(`tracker_missed_${medId}`);
+    } catch { }
   }
 
   async cancelAll() {
     if (!notifee) return;
-    try { await notifee.cancelAllNotifications(); } catch {}
+    try { await notifee.cancelAllNotifications(); } catch { }
   }
 
   // ── Test ──────────────────────────────────────────────────────────────────────

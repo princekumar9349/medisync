@@ -101,6 +101,8 @@ def _ensure_indexes() -> None:
     try:
         _db["users"].create_index([("email", ASCENDING)], unique=True)
         _db["prescriptions"].create_index([("user_id", ASCENDING), ("created_at", DESCENDING)])
+        # Compound index for fast time-window dose log queries (core of analytics)
+        _db["dose_logs"].create_index([("user_id", ASCENDING), ("timestamp", DESCENDING)])
         _db["dose_logs"].create_index([("user_id", ASCENDING), ("med_id", ASCENDING), ("timestamp", DESCENDING)])
         _db["insights"].create_index([("user_id", ASCENDING), ("generated_at", DESCENDING)])
         _db["doctor_chats"].create_index([("user_id", ASCENDING), ("timestamp", ASCENDING)])
@@ -109,6 +111,40 @@ def _ensure_indexes() -> None:
         _db["emergencies"].create_index([("user_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)])
         _db["notifications"].create_index([("user_id", ASCENDING), ("read", ASCENDING), ("created_at", DESCENDING)])
         _db["notifications"].create_index([("user_id", ASCENDING), ("type", ASCENDING)])
+        
+        # Security/Audit indexes
+        _db["audit_logs"].create_index([("timestamp", DESCENDING)])
+        _db["audit_logs"].create_index([("actor_id", ASCENDING), ("timestamp", DESCENDING)])
+        _db["audit_logs"].create_index([("target_id", ASCENDING)])
+        
+        # Session indexes
+        _db["sessions"].create_index([("session_id", ASCENDING)], unique=True)
+        _db["sessions"].create_index([("user_id", ASCENDING)])
+        _db["sessions"].create_index(
+            [("expires_at", ASCENDING)], 
+            expireAfterSeconds=0, 
+            name="session_ttl"
+        )
+        # Analytics indexes
+        _db["analytics_snapshots"].create_index([("user_id", ASCENDING)], unique=True)
+        # Compound index for doctor risk-sorted dashboard (reads from pre-computed scores)
+        _db["analytics_snapshots"].create_index([
+            ("risk.score", DESCENDING), ("adherence.score_7d", ASCENDING)
+        ], name="risk_ranking")
+        _db["patient_timelines"].create_index([("user_id", ASCENDING), ("timestamp", DESCENDING)])
+        # TTL index: auto-purge ai_metrics rows older than 90 days
+        _db["ai_metrics"].create_index(
+            [("timestamp", ASCENDING)],
+            expireAfterSeconds=60 * 60 * 24 * 90,  # 90 days
+            name="ai_metrics_ttl"
+        )
+        _db["ai_metrics"].create_index([("provider", ASCENDING), ("timestamp", DESCENDING)])
+        
+        # OCR System
+        _db["ocr_jobs"].create_index([("user_id", ASCENDING), ("created_at", DESCENDING)])
+        _db["ocr_cache"].create_index([("image_hash", ASCENDING)], unique=True)
+        _db["prescription_extractions"].create_index([("job_id", ASCENDING)], unique=True)
+
         logger.info("MongoDB indexes ensured.")
     except Exception as e:
         logger.warning(f"Index creation warning (non-fatal): {e}")
@@ -160,6 +196,41 @@ def get_emergencies() -> Collection | None:
 def get_notifications() -> Collection | None:
     """Notification inbox — stores all user notifications with read state and analytics."""
     return _db["notifications"] if _db is not None else None
+
+# ─── Security & Audit Collection Accessors ───────────────────────────────────
+
+def get_audit_logs() -> Collection | None:
+    """Immutable audit trail for critical state mutations."""
+    return _db["audit_logs"] if _db is not None else None
+
+def get_sessions() -> Collection | None:
+    """Stateful sessions (currently used for caregiver mode)."""
+    return _db["sessions"] if _db is not None else None
+
+# ─── Analytics Collection Accessors ──────────────────────────────────────────
+
+def get_analytics_snapshots() -> Collection | None:
+    """Pre-computed per-user analytics snapshots. Primary read target for all dashboard APIs."""
+    return _db["analytics_snapshots"] if _db is not None else None
+
+def get_ai_metrics() -> Collection | None:
+    """Per-request AI observability. Written by the AI Gateway on every response."""
+    return _db["ai_metrics"] if _db is not None else None
+
+def get_patient_timelines() -> Collection | None:
+    """Chronological event log per patient. Used for timeline visualization and future AI training."""
+    return _db["patient_timelines"] if _db is not None else None
+
+# ─── OCR System Accessors ────────────────────────────────────────────────────
+
+def get_ocr_jobs() -> Collection | None:
+    return _db["ocr_jobs"] if _db is not None else None
+
+def get_ocr_cache() -> Collection | None:
+    return _db["ocr_cache"] if _db is not None else None
+
+def get_prescription_extractions() -> Collection | None:
+    return _db["prescription_extractions"] if _db is not None else None
 
 def ping() -> bool:
     """Live health check — used by /health-check endpoint."""

@@ -130,6 +130,56 @@ export const SHADOW = {
   }),
 };
 
+// ─── Animation Tokens ──────────────────────────────────────────────────────────
+export const ANIMATION = {
+  // Durations (ms)
+  fast:   150,
+  normal: 250,
+  slow:   400,
+  // Standard easing for healthcare-grade motion (no bounce)
+  easeOut: 'ease-out',
+};
+
+// ─── Semantic Color Aliases ────────────────────────────────────────────────────
+// Use these in components instead of raw COLORS.brand600 etc.
+// This makes intent clear and future re-theming trivial.
+export const SEMANTIC = {
+  success:     '#059669',  // COLORS.emerald600
+  successBg:   '#ecfdf5',  // COLORS.emerald50
+  successBorder:'#a7f3d0', // COLORS.emerald200
+  warning:     '#d97706',  // COLORS.amber600
+  warningBg:   '#fffbeb',  // COLORS.amber50
+  warningBorder:'#fde68a', // COLORS.amber200
+  danger:      '#dc2626',  // COLORS.red600
+  dangerBg:    '#fef2f2',  // COLORS.red50
+  dangerBorder:'#fecaca',  // COLORS.red200
+  info:        '#0D9488',  // COLORS.brand600 (teal)
+  infoBg:      '#F0FDFA',  // COLORS.brand50
+  infoBorder:  '#99F6E4',  // COLORS.brand200
+  surface:     '#FFFFFF',
+  surfaceAlt:  '#F7F9FC',  // COLORS.bgLight
+  textPrimary: '#262626',  // COLORS.slate800
+  textSecondary:'#737373', // COLORS.slate500
+  textMuted:   '#A3A3A3',  // COLORS.slate400
+  border:      '#E5E7EB',
+};
+
+// ─── Touch Target Sizes ────────────────────────────────────────────────────────
+// Per Apple HIG & Google Material: minimum 44×44pt for all interactive targets.
+// Critical for elderly mode and accessibility compliance.
+export const TOUCH = {
+  min: 44,     // Minimum dimension for any tappable element
+  comfortable: 48,
+  large: 56,   // For primary actions (SOS, Save, Confirm)
+};
+
+// ─── Typography Line Heights ───────────────────────────────────────────────────
+export const LINE_HEIGHT = {
+  tight:   1.2,  // Use for headings (multiply by fontSize)
+  normal:  1.5,  // Body text
+  relaxed: 1.75, // Multi-line medical instructions / descriptions
+};
+
 // ─── Shared Styles ─────────────────────────────────────────────────────────────
 export const S = StyleSheet.create({
   // Cards — clean bordered style

@@ -1,0 +1,38 @@
+name: Backend Tests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.12"
+        cache: "pip"
+
+    - name: Install dependencies
+      run: |
+        cd backend
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-test.txt
+
+    - name: Run tests
+      env:
+        ENV: testing
+        JWT_SECRET_KEY: test_secret_do_not_use_in_prod
+        GEMINI_API_KEY: fake_gemini_key
+        GROQ_API_KEY: fake_groq_key
+        SCHEDULER_ENABLED: false
+      run: |
+        cd backend
+        pytest tests/ -v

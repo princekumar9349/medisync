@@ -4,15 +4,20 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View, Text, StyleSheet, ScrollView, FlatList, TouchableOpacity,
-  ActivityIndicator, StatusBar, RefreshControl, Alert, Animated, TextInput,
+  ActivityIndicator, StatusBar, RefreshControl, Alert, Animated, TextInput, DeviceEventEmitter, Platform
 } from 'react-native';
 import * as Speech from 'expo-speech';
 import { Ionicons } from '@expo/vector-icons';
 import AppHeader, { AppHeaderBtn } from '../../components/AppHeader';
-import { apiGetPillboxSlots, apiMarkDone } from '../../services/api';
-import { COLORS, FONTS, SPACING, RADIUS, S, SHADOW } from '../../theme';
+import EmptyState from '../../components/EmptyState';
+import { PillboxSkeleton } from '../../components/SkeletonLoader';
+import { apiGetPillboxSlots, apiMarkDoseTaken, apiMarkDoseSkipped } from '../../services/api';
+import { enqueueSyncAction } from '../../sync/queue';
+import NotificationService from '../../services/NotificationService';
+import { COLORS, FONTS, SPACING, RADIUS, S, SHADOW, TOUCH } from '../../theme';
 
 
 // ─── Dose State Configuration ─────────────────────────────────────────────────
@@ -59,21 +64,35 @@ function MedRow({ med, voiceOn, language, onStatusChange }) {
 
   async function act(newStatus) {
     if (loading) return;
-    setLoading(true);
+    
+    // 1. Optimistic UI update instantly
+    setStatus(newStatus);
+    onStatusChange?.(newStatus);
+
+    if (voiceOn) {
+      const msg = language === 'HI'
+        ? (newStatus === 'taken' ? `${med.name} ले ली गई।` : `${med.name} छोड़ दी गई।`)
+        : (newStatus === 'taken' ? `${med.name} marked taken.` : `${med.name} skipped.`);
+      Speech.speak(msg, { language: language === 'HI' ? 'hi-IN' : 'en-IN', rate: 0.9 });
+    }
+
+    // 2. Silent backend sync
+    const timestamp = new Date().toISOString();
     try {
-      await apiMarkDone(med.med_id, newStatus);
-      setStatus(newStatus);
-      onStatusChange?.(newStatus);
-      if (voiceOn) {
-        const msg = language === 'HI'
-          ? (newStatus === 'taken' ? `${med.name} ले ली गई।` : `${med.name} छोड़ दी गई।`)
-          : (newStatus === 'taken' ? `${med.name} marked taken.` : `${med.name} skipped.`);
-        Speech.speak(msg, { language: language === 'HI' ? 'hi-IN' : 'en-IN', rate: 0.9 });
+      if (newStatus === 'taken') {
+        await apiMarkDoseTaken(med.med_id, '', timestamp);
+      } else {
+        await apiMarkDoseSkipped(med.med_id, '', timestamp);
       }
     } catch (e) {
-      Alert.alert('Error', e.message || 'Could not update dose.');
-    } finally {
-      setLoading(false);
+      console.warn('[Pillbox] Network fail, queuing offline action:', e.message);
+      await enqueueSyncAction({
+        operation_type: newStatus === 'taken' ? 'MARK_TAKEN' : 'MARK_SKIPPED',
+        priority: 1, // High priority adherence log
+        payload: { medicine_id: med.med_id, slot: '', timestamp },
+        dedupe_key: `${newStatus}_${med.med_id}`
+      });
+      DeviceEventEmitter.emit('sync_queue_updated', true);
     }
   }
 
@@ -105,7 +124,7 @@ function MedRow({ med, voiceOn, language, onStatusChange }) {
         )}
       </View>
 
-      {/* Action area */}
+      {/* Action area — 44pt minimum touch target */}
       {loading ? (
         <ActivityIndicator size="small" color={COLORS.brand500} />
       ) : isDone ? (
@@ -122,11 +141,25 @@ function MedRow({ med, voiceOn, language, onStatusChange }) {
         </View>
       ) : (
         <View style={styles.actionRow}>
-          <TouchableOpacity style={styles.takeBtn} onPress={() => act('taken')} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={styles.takeBtn}
+            onPress={() => act('taken')}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={`Mark ${med.name} as ${isLate ? 'taken late' : 'taken'}`}
+            hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+          >
             <Ionicons name="checkmark" size={14} color={COLORS.white} />
             <Text style={styles.takeBtnText}>{isLate ? 'Take Late' : 'Take'}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.skipBtn} onPress={() => act('skipped')} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={styles.skipBtn}
+            onPress={() => act('skipped')}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={`Skip ${med.name}`}
+            hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+          >
             <Text style={styles.skipBtnText}>Skip</Text>
           </TouchableOpacity>
         </View>
@@ -262,10 +295,9 @@ function SummaryStrip({ summary }) {
 }
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
-export default function PillboxScreen({ route }) {
+export default function PillboxScreen({ route, navigation }) {
   const voiceOn  = route?.params?.voiceOn  ?? false;
   const language = route?.params?.language ?? 'EN';
-
   const [slots,        setSlots]        = useState({ morning: [], afternoon: [], night: [] });
   const [summary,      setSummary]      = useState({});
   const [alertMessage, setAlertMessage] = useState(null);
@@ -273,10 +305,36 @@ export default function PillboxScreen({ route }) {
   const [loading,      setLoading]      = useState(true);
   const [refreshing,   setRefreshing]   = useState(false);
   const [error,        setError]        = useState(null);
+  const [notifWarning, setNotifWarning] = useState(false);
   const [filter,       setFilter]       = useState('all');
   const [search,       setSearch]       = useState('');
+  const [syncPending,  setSyncPending]  = useState(false);
+
+  // Focus effect to reload data + check notif state
+  useFocusEffect(
+    useCallback(() => {
+      loadSlots();
+      checkNotifHealth();
+    }, [filter])
+  );
+
+  async function checkNotifHealth() {
+    try {
+      const settings = await NotificationService.getNotificationSettings();
+      const noPerms = !settings.isAuthorized;
+      const batteryOpt = Platform.OS === 'android' ? await NotificationService.checkBatteryOptimizations() : false;
+      setNotifWarning(noPerms || batteryOpt);
+    } catch { }
+  }
 
   const pollRef = useRef(null);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('sync_queue_updated', (hasPending) => {
+      setSyncPending(hasPending);
+    });
+    return () => sub.remove();
+  }, []);
 
   // Derive flat list + filter counts
   const allMeds = useMemo(() => [
@@ -346,22 +404,37 @@ export default function PillboxScreen({ route }) {
 
       <AppHeader
         title="Pillbox"
-        subtitle={lastUpdated ? `Updated ${lastUpdated}` : "Today's schedule"}
-        right={<AppHeaderBtn icon="refresh-outline" onPress={() => loadSlots()} />}
+        subtitle={new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+        right={<AppHeaderBtn icon="add" onPress={() => navigation.navigate('Scan')} accessibilityLabel="Add prescription" />}
       />
 
+      {notifWarning && (
+        <TouchableOpacity 
+          style={{ backgroundColor: '#FFFBEB', padding: 12, borderBottomWidth: 1, borderBottomColor: '#FEF3C7', flexDirection: 'row', alignItems: 'center' }}
+          onPress={() => navigation.navigate('Profile', { screen: 'NotificationDiagnostics' })}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="information-circle" size={20} color="#D97706" style={{ marginRight: 8 }} />
+          <Text style={{ flex: 1, fontSize: 13, color: '#B45309', fontWeight: '500' }}>
+            Some reminder optimizations may be affecting notifications. Tap to fix.
+          </Text>
+          <Ionicons name="chevron-forward" size={16} color="#D97706" />
+        </TouchableOpacity>
+      )}
+
       {loading ? (
-        <View style={[S.center, { flex: 1 }]}>
-          <ActivityIndicator size="large" color={COLORS.brand500} />
-          <Text style={{ marginTop: 14, color: COLORS.slate400, fontSize: FONTS.sm }}>Loading medications…</Text>
-        </View>
+        <PillboxSkeleton />
       ) : error ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: SPACING.xl, gap: 14 }}>
-          <Ionicons name="warning-outline" size={44} color={COLORS.red500} />
-          <Text style={{ fontSize: FONTS.base, color: COLORS.slate600, textAlign: 'center' }}>{error}</Text>
-          <TouchableOpacity style={S.btnPrimary} onPress={() => loadSlots()}>
-            <Text style={S.btnPrimaryText}>Retry</Text>
-          </TouchableOpacity>
+        <View style={{ flex: 1, padding: SPACING.lg, justifyContent: 'center' }}>
+          <EmptyState
+            icon="cloud-offline-outline"
+            iconColor={COLORS.amber600}
+            iconBg={COLORS.amber50}
+            title="Couldn't load your pillbox"
+            body={error}
+            actionLabel="Retry"
+            onAction={() => loadSlots()}
+          />
         </View>
       ) : (
         <ScrollView
@@ -410,13 +483,13 @@ export default function PillboxScreen({ route }) {
 
           {/* Empty state */}
           {allMeds.length === 0 ? (
-            <View style={styles.emptyWrap}>
-              <View style={styles.emptyCircle}>
-                <Ionicons name="medkit-outline" size={44} color={COLORS.brand400} />
-              </View>
-              <Text style={styles.emptyTitle}>No medicines scheduled</Text>
-              <Text style={styles.emptyDesc}>Scan a prescription to add medicines to your pillbox.</Text>
-            </View>
+            <EmptyState
+              icon="medkit-outline"
+              title="No medicines scheduled today"
+              body="Scan a prescription to add medicines to your pillbox. Your daily schedule will appear here."
+              actionLabel="Scan a Prescription"
+              onAction={() => {}} // navigation.navigate('Scan') — passed via props or tab navigation
+            />
           ) : (
             <>
               {/* Missed accordion — only in 'all' filter */}
@@ -446,6 +519,8 @@ export default function PillboxScreen({ route }) {
 const styles = StyleSheet.create({
   header:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   refreshBtn:     { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.brand50, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.brand200 },
+  syncBadge:      { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: COLORS.amber50, paddingHorizontal: 8, paddingVertical: 4, borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.amber200 },
+  syncBadgeText:  { fontSize: 10, color: COLORS.amber700, fontWeight: FONTS.bold },
   datePill:       { flexDirection: 'row', alignItems: 'center', marginBottom: SPACING.md, backgroundColor: COLORS.brand50, borderRadius: RADIUS.full, paddingVertical: 6, paddingHorizontal: 12, alignSelf: 'flex-start' },
   dateText:       { fontSize: FONTS.sm, fontWeight: FONTS.bold, color: COLORS.brand700 },
   searchBar:      { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: COLORS.slate50, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.full, paddingHorizontal: 14, paddingVertical: 9, marginBottom: SPACING.md },
@@ -492,9 +567,9 @@ const styles = StyleSheet.create({
   statusPillText: { fontSize: FONTS.xs, fontWeight: FONTS.bold },
 
   actionRow:      { flexDirection: 'row', gap: 5 },
-  takeBtn:        { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: COLORS.brand600, borderRadius: RADIUS.full, paddingHorizontal: 12, paddingVertical: 7 },
+  takeBtn:        { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: COLORS.brand600, borderRadius: RADIUS.full, paddingHorizontal: 12, paddingVertical: 9, minHeight: TOUCH.min },
+  skipBtn:        { backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.slate300, borderRadius: RADIUS.full, paddingHorizontal: 10, paddingVertical: 9, minHeight: TOUCH.min },
   takeBtnText:    { color: COLORS.white, fontSize: FONTS.xs, fontWeight: FONTS.bold },
-  skipBtn:        { backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.slate300, borderRadius: RADIUS.full, paddingHorizontal: 10, paddingVertical: 7 },
   skipBtnText:    { color: COLORS.slate600, fontSize: FONTS.xs, fontWeight: FONTS.bold },
 
   emptyWrap:      { alignItems: 'center', padding: SPACING.xl, gap: 12, marginTop: 40 },

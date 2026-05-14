@@ -24,7 +24,7 @@ logger = logging.getLogger("Medisync.Scan")
 router = APIRouter(tags=["Prescription"])
 
 
-# ─── Helper ───────────────────────────────────────────────────────────────────
+# Helper 
 
 def _is_valid_image_bytes(data: bytes) -> bool:
     """Quick magic-byte check for common image formats."""
@@ -52,9 +52,9 @@ def _detect_mime_type(data: bytes) -> str:
     return "image/jpeg"  # fallback
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+
 #  POST /scan — Gemini Vision Prescription Scanner
-# ═══════════════════════════════════════════════════════════════════════════════
+
 
 @router.post(
     "/scan",
@@ -75,7 +75,7 @@ async def scan_prescription(
     5. Persist to MongoDB
     """
     try:
-        # ── 1. Read image ─────────────────────────────────────────
+        # 1. Read image 
         image_bytes = await file.read()
 
         if not image_bytes:
@@ -90,7 +90,7 @@ async def scan_prescription(
                 detail="Invalid file type. Please upload a JPEG, PNG, or BMP image.",
             )
 
-        # ── 2. Gemini Vision — read prescription directly ─────────
+        # 2. Gemini Vision — read prescription directly 
         mime_type = _detect_mime_type(image_bytes)
         logger.info(f"📸 Scanning prescription with Gemini Vision ({mime_type})...")
 
@@ -102,7 +102,7 @@ async def scan_prescription(
                 detail="Could not extract any medicines from the prescription image. Please try a clearer photo.",
             )
 
-        # ── 3. Build medicines from Gemini response ───────────────
+        # 3. Build medicines from Gemini response 
         parsed_medicines = []
         global_schedule = set()
 
@@ -151,7 +151,7 @@ async def scan_prescription(
             parsed_medicines.append(med)
             global_schedule.update(sched_list)
 
-        # ── 4. Extract insights from Gemini response ──────────────
+        # 4. Extract insights from Gemini response 
         patient_summary = gemini_result.get("patient_summary", {})
         doctor_notes = gemini_result.get("doctor_notes", [])
 
@@ -161,7 +161,7 @@ async def scan_prescription(
         if doctor_notes:
             advice_parts.extend(doctor_notes)
 
-        # ── 5. Build response ─────────────────────────────────────
+        # 5. Build response 
         response = ScanResponse(
             ocr_text="[Gemini Vision — direct image analysis]",
             confidence_score=0.90,
@@ -176,7 +176,7 @@ async def scan_prescription(
             precautions="; ".join(patient_summary.get("risk_flags", [])) or "Follow standard prescription guidelines.",
         )
 
-        # ── 6. Persist to MongoDB ─────────────────────────────────
+        #  6. Persist to MongoDB 
         prescriptions_col = database.get_prescriptions()
         if prescriptions_col is not None:
             try:
@@ -209,9 +209,9 @@ def _confidence_to_float(conf: str) -> float:
     return mapping.get((conf or "").lower(), 0.75)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+
 #  POST /scan/analyze — Advanced Prescription Intelligence Pipeline
-# ═══════════════════════════════════════════════════════════════════════════════
+
 
 from models.schemas import (
     PrescriptionIntelligenceResponse,
@@ -245,7 +245,7 @@ async def analyze_prescription(
     5. Return full PrescriptionIntelligenceResponse
     """
     try:
-        # ── 1. Read image ─────────────────────────────────────────
+        # 1. Read image 
         image_bytes = await file.read()
 
         if not image_bytes:
@@ -260,7 +260,7 @@ async def analyze_prescription(
                 detail="Invalid file type. Please upload a JPEG, PNG, or BMP image.",
             )
 
-        # ── 2. Gemini Vision ──────────────────────────────────────
+        # 2. Gemini Vision 
         mime_type = _detect_mime_type(image_bytes)
         logger.info(f"🔬 /scan/analyze — Gemini Vision ({mime_type})...")
 
@@ -272,7 +272,7 @@ async def analyze_prescription(
                 detail="Could not analyze the prescription. Please try a clearer photo.",
             )
 
-        # ── 3. Build structured response ──────────────────────────
+        # 3. Build structured response 
         llm_meds = gemini_result.get("medicines", [])
         llm_summary = gemini_result.get("patient_summary", {})
         llm_tests = gemini_result.get("tests_recommended", []) or []
@@ -296,7 +296,7 @@ async def analyze_prescription(
             risk_flags=llm_summary.get("risk_flags", []),
         )
 
-        # ── 4. Accumulate patient memory ──────────────────────────
+        # 4. Accumulate patient memory 
         medicine_names = [
             m.get("normalized_name") or m.get("name", "")
             for m in llm_meds if m.get("name")
@@ -340,7 +340,7 @@ async def analyze_prescription(
             ocr_confidence=0.90,
         )
 
-        # ── 5. Audit: store structured result ─────────────────────
+        # 5. Audit: store structured result 
         save_scan_intelligence(
             user_id=user_id,
             raw_ocr="[Gemini Vision]",

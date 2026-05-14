@@ -1,0 +1,222 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# .github/workflows/deploy.yml
+# Medisync Backend — CI/CD Pipeline
+#
+# Triggers:
+#   push → main   → deploys to PRODUCTION Cloud Run
+#   push → staging → deploys to STAGING Cloud Run
+#
+# Secrets required (set in GitHub → Settings → Secrets and variables → Actions):
+#   GCP_SA_KEY           — Service account JSON key with Cloud Run + Artifact Registry permissions
+#   GCP_PROJECT_ID       — Google Cloud project ID
+#   MONGO_URI_PROD       — Production MongoDB Atlas connection string
+#   MONGO_URI_STAGING    — Staging MongoDB Atlas connection string
+#   JWT_SECRET_PROD      — Production JWT secret (strong, random)
+#   JWT_SECRET_STAGING   — Staging JWT secret
+#   GEMINI_API_KEY       — Google Gemini API key
+#   GROQ_API_KEY         — Groq API key
+#   SENTRY_DSN           — Sentry DSN for crash monitoring
+#   FIREBASE_CREDENTIALS_B64 — Base64-encoded Firebase serviceAccountKey.json
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Deploy Medisync Backend
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy.yml'
+
+env:
+  GCP_REGION:           asia-south1
+  ARTIFACT_REGISTRY:    asia-south1-docker.pkg.dev
+  GCP_PROJECT_ID:       ${{ secrets.GCP_PROJECT_ID }}
+  IMAGE_NAME:           medisync-backend
+  REPO_NAME:            medisync
+
+jobs:
+  # ── Job 1: Lint & Validate ──────────────────────────────────────────────────
+  lint:
+    name: Lint & Validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install lint dependencies
+        run: pip install ruff==0.4.4
+
+      - name: Run ruff linter
+        run: ruff check . --select E,F,W --ignore E501
+
+      - name: Validate env structure (check for required keys)
+        run: |
+          echo "Checking for required env var references in config.py..."
+          grep -q "MONGO_URI" core/config.py && echo "✅ MONGO_URI" || exit 1
+          grep -q "JWT_SECRET" core/config.py && echo "✅ JWT_SECRET" || exit 1
+          grep -q "GEMINI_API_KEY" core/config.py && echo "✅ GEMINI_API_KEY" || exit 1
+          echo "✅ Config validation passed."
+
+  # ── Job 2: Build & Push Docker Image ────────────────────────────────────────
+  build:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: lint
+    outputs:
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "env=production" >> $GITHUB_OUTPUT
+            echo "service=medisync-backend-prod" >> $GITHUB_OUTPUT
+          else
+            echo "env=staging" >> $GITHUB_OUTPUT
+            echo "service=medisync-backend-staging" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.ARTIFACT_REGISTRY }} --quiet
+
+      - name: Build image tag
+        id: meta
+        run: |
+          SHORT_SHA="${{ github.sha }}"
+          SHORT_SHA="${SHORT_SHA:0:8}"
+          ENV="${{ steps.env.outputs.env }}"
+          TAG="${{ env.ARTIFACT_REGISTRY }}/${{ env.GCP_PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:${ENV}-${SHORT_SHA}"
+          echo "image_tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "Building: ${TAG}"
+
+      - name: Build Docker image (multi-stage)
+        working-directory: backend
+        run: |
+          docker build \
+            --target runtime \
+            --tag "${{ steps.meta.outputs.image_tag }}" \
+            --tag "${{ env.ARTIFACT_REGISTRY }}/${{ env.GCP_PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:${{ steps.env.outputs.env }}-latest" \
+            --cache-from "${{ env.ARTIFACT_REGISTRY }}/${{ env.GCP_PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:${{ steps.env.outputs.env }}-latest" \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            .
+
+      - name: Push Docker image
+        run: |
+          docker push "${{ steps.meta.outputs.image_tag }}"
+          docker push "${{ env.ARTIFACT_REGISTRY }}/${{ env.GCP_PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:${{ steps.env.outputs.env }}-latest"
+
+  # ── Job 3: Deploy to Cloud Run ───────────────────────────────────────────────
+  deploy:
+    name: Deploy to Cloud Run
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "env=production" >> $GITHUB_OUTPUT
+            echo "service=medisync-backend-prod" >> $GITHUB_OUTPUT
+            echo "mongo_uri=${{ secrets.MONGO_URI_PROD }}" >> $GITHUB_OUTPUT
+            echo "jwt_secret=${{ secrets.JWT_SECRET_PROD }}" >> $GITHUB_OUTPUT
+          else
+            echo "env=staging" >> $GITHUB_OUTPUT
+            echo "service=medisync-backend-staging" >> $GITHUB_OUTPUT
+            echo "mongo_uri=${{ secrets.MONGO_URI_STAGING }}" >> $GITHUB_OUTPUT
+            echo "jwt_secret=${{ secrets.JWT_SECRET_STAGING }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Write Firebase credentials
+        working-directory: backend
+        run: |
+          mkdir -p firebase
+          echo "${{ secrets.FIREBASE_CREDENTIALS_B64 }}" | base64 -d > firebase/serviceAccountKey.json
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service:  ${{ steps.env.outputs.service }}
+          image:    ${{ needs.build.outputs.image_tag }}
+          region:   ${{ env.GCP_REGION }}
+          # Traffic split: 100% to new revision only after health probe passes
+          flags: >
+            --allow-unauthenticated
+            --port=8080
+            --cpu=1
+            --memory=1Gi
+            --min-instances=0
+            --max-instances=3
+            --concurrency=80
+            --timeout=300
+            --set-env-vars=ENV=${{ steps.env.outputs.env }}
+            --set-env-vars=SCHEDULER_ENABLED=true
+            --set-env-vars=CORS_ORIGINS=https://medisync-app.web.app,https://medisync.app
+            --set-env-vars=MONGO_URI=${{ steps.env.outputs.mongo_uri }}
+            --set-env-vars=JWT_SECRET_KEY=${{ steps.env.outputs.jwt_secret }}
+            --set-env-vars=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+            --set-env-vars=GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}
+            --set-env-vars=SENTRY_DSN=${{ secrets.SENTRY_DSN }}
+            --set-env-vars=FIREBASE_CREDENTIALS=firebase/serviceAccountKey.json
+
+      - name: Verify deployment health
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ steps.env.outputs.service }} \
+            --region ${{ env.GCP_REGION }} --format="value(status.url)")
+          echo "Deployed to: ${SERVICE_URL}"
+
+          # Wait for container to initialize (APScheduler, MongoDB connect)
+          sleep 15
+
+          # Health check
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${SERVICE_URL}/health")
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "❌ Health check failed (HTTP ${HTTP_STATUS}). Rolling back..."
+            gcloud run services update-traffic ${{ steps.env.outputs.service }} \
+              --region ${{ env.GCP_REGION }} --to-revisions=PREVIOUS=100
+            exit 1
+          fi
+
+          # Readiness check
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${SERVICE_URL}/ready")
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "⚠️  Readiness check returned ${HTTP_STATUS} (possible degraded mode — check logs)"
+          fi
+
+          echo "✅ Deployment verified: ${SERVICE_URL}"
+
+      - name: Notify deployment (summary)
+        run: |
+          echo "### Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** ${{ steps.env.outputs.env }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image:** ${{ needs.build.outputs.image_tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Service:** ${{ steps.env.outputs.service }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **SHA:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
