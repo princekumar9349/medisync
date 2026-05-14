@@ -23,6 +23,13 @@ ios/build/
 *.a
 *.o
 
+# APK / IPA build outputs (too large for GitHub)
+*.apk
+*.aab
+*.ipa
+mobile/build-*.apk
+mobile/build-*.aab
+
 # Python
 venv/
 __pycache__/
