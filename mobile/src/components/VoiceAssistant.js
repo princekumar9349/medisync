@@ -58,6 +58,7 @@ export default function VoiceAssistant({ navigationRef }) {
   // Recording state refs (not useState — avoids stale closures in handlers)
   const recordingRef    = useRef(null);   // Audio.Recording instance
   const recordingReady  = useRef(false);  // true only after createAsync resolves
+  const isStarting      = useRef(false);  // lock: prevent duplicate createAsync calls
   const pressStartTime  = useRef(0);
 
   // Animations
@@ -113,9 +114,11 @@ export default function VoiceAssistant({ navigationRef }) {
 
   // ── onPressIn — START RECORDING IMMEDIATELY ──────────────────────────────────
   async function handlePressIn() {
-    setVisible(true); // open panel
+    // LOCK: prevent duplicate calls while createAsync is in-flight
+    if (isStarting.current || recordingReady.current) return;
+    isStarting.current = true;
 
-    // Reset state
+    setVisible(true);
     setTranscript('');
     setAiResponse('');
     setLastAction('');
@@ -142,6 +145,7 @@ export default function VoiceAssistant({ navigationRef }) {
 
       recordingRef.current   = recording;
       recordingReady.current = true;
+      isStarting.current     = false;
       pressStartTime.current = Date.now();
 
       startPulse();
@@ -149,7 +153,13 @@ export default function VoiceAssistant({ navigationRef }) {
 
     } catch (e) {
       console.error('[VoiceAI] Start error:', e);
+      isStarting.current     = false;
       recordingReady.current = false;
+      // Cleanup any partially-initialized recording
+      if (recordingRef.current) {
+        try { await recordingRef.current.stopAndUnloadAsync(); } catch (_e2) { /* ignore */ }
+        recordingRef.current = null;
+      }
       setStatus('error');
       setAiResponse('Mic shuru nahi ho paya. Dobara try karein.');
     }
