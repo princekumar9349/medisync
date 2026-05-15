@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert, Switch, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, FONTS, SHADOW } from '../../../theme';
-import api from '../../../services/api';
+import { COLORS, FONTS, SHADOW } from '../../theme';
+import api from '../../services/api';
 
 const DemoScenarioScreen = ({ navigation }) => {
   const [demoMode, setDemoMode] = useState(true);
