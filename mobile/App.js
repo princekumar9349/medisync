@@ -12,6 +12,7 @@
 import './global.css';
 import 'react-native-gesture-handler';
 import React, { useEffect, useRef } from 'react';
+import { View, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -164,7 +165,7 @@ export default function App() {
           fcmUnsubRef.current.unsubForeground?.();
           fcmUnsubRef.current.unsubRefresh?.();
         }
-      } catch {}
+      } catch (_e) {}
       
       stopNetworkListener();
     };
@@ -186,8 +187,10 @@ export default function App() {
                 navigationRef={navigationRef}
                 onReady={onNavigationReady}
               />
-              {/* MEDISYNC CORE AI — Floating Voice Assistant (all screens) */}
-              <VoiceAssistant navigationRef={navigationRef} />
+              {/* MEDISYNC PRIME AI — Floating Voice Assistant (full-screen layer) */}
+              <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+                <VoiceAssistant navigationRef={navigationRef} />
+              </View>
               <StatusBar style="auto" />
             </ToastProvider>
           </AppThemeProvider>
