@@ -24,31 +24,46 @@ const SCREEN_MAP = {
 };
 
 const STATUS_CFG = {
-  idle:       { label: 'Tap to start Prime Mode',  color: COLORS.brand600 },
-  ready:      { label: 'Hold & speak anytime',      color: '#8B5CF6' },
-  recording:  { label: 'Listening...',              color: '#EF4444' },
-  processing: { label: 'Thinking...',               color: '#F59E0B' },
-  speaking:   { label: 'Speaking...',               color: '#10B981' },
-  error:      { label: 'Error — try again',         color: COLORS.slate500 },
+  idle:       { label: 'Tap mic or long-press for Prime',  color: COLORS.brand600 },
+  ready:      { label: 'Hold & speak anytime',              color: '#8B5CF6' },
+  recording:  { label: 'Listening',                        color: '#EF4444' },
+  processing: { label: 'Thinking...',                      color: '#F59E0B' },
+  speaking:   { label: 'Speaking...',                      color: '#10B981' },
+  error:      { label: 'Error — try again',                color: COLORS.slate500 },
 };
 
 // Stop words to exit Prime Mode
 const STOP_WORDS = ['stop', 'band karo', 'bas', 'exit', 'quit', 'bnd karo', 'ruk jao'];
 
-export default function VoiceAssistant({ navigationRef }) {
-  const [visible,    setVisible]    = useState(false);
-  const [status,     setStatus]     = useState('idle');
-  const [primeMode,  setPrimeMode]  = useState(false);
-  const [transcript, setTranscript] = useState('');
-  const [aiResponse, setAiResponse] = useState('');
-  const [lastAction, setLastAction] = useState('');
-  const [history,    setHistory]    = useState([]); // conversational memory
+// ── MODULE-LEVEL SINGLETON ────────────────────────────────────────────────────
+// Persists across hot-reloads so the native expo-av recording session
+// is never orphaned (fixes "Only one Recording object can be prepared").
+let _gRec = null;          // the one and only Audio.Recording instance
+let _gBusy = false;        // lock: prevents concurrent createAsync calls
 
-  const recordingRef   = useRef(null);
-  const isStarting     = useRef(false);
+async function _globalUnload() {
+  _gBusy = false;
+  if (_gRec) {
+    try { await _gRec.stopAndUnloadAsync(); } catch (_e) { /* ignore */ }
+    _gRec = null;
+  }
+  try { await Audio.setAudioModeAsync({ allowsRecordingIOS: false }); } catch (_e) { /* ignore */ }
+}
+
+export default function VoiceAssistant({ navigationRef }) {
+  const [visible,       setVisible]       = useState(false);
+  const [status,        setStatus]        = useState('idle');
+  const [primeMode,     setPrimeMode]     = useState(false);
+  const [transcript,    setTranscript]    = useState('');
+  const [aiResponse,    setAiResponse]    = useState('');
+  const [lastAction,    setLastAction]    = useState('');
+  const [history,       setHistory]       = useState([]);
+  const [recordSecs,    setRecordSecs]    = useState(0);  // recording timer
+
   const recordingReady = useRef(false);
   const pressStart     = useRef(0);
-  const primeModeRef   = useRef(false); // ref mirror for async callbacks
+  const timerRef       = useRef(null);
+  const primeModeRef   = useRef(false);
   const isSpeaking     = useRef(false);
 
   // Animations
@@ -101,27 +116,33 @@ export default function VoiceAssistant({ navigationRef }) {
     catch (_e) { return null; }
   }
 
-  // ── Force-unload any stuck recording ────────────────────────────────────────
-  async function forceUnload() {
-    if (recordingRef.current) {
-      try { await recordingRef.current.stopAndUnloadAsync(); } catch (_e) { /* ignore */ }
-      recordingRef.current = null;
-    }
-    recordingReady.current = false;
-    isStarting.current = false;
+  // ── Timer helpers ──────────────────────────────────────────────────────────
+  function startTimer() {
+    setRecordSecs(0);
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(function() {
+      setRecordSecs(function(s) { return s + 1; });
+    }, 1000);
+  }
+  function stopTimer() {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    setRecordSecs(0);
   }
 
-  // ── Start a single recording session ─────────────────────────────────────────
+  // ── Start a single recording session (uses global singleton) ─────────────────
   async function startRecording() {
-    if (isStarting.current || recordingReady.current) return;
-    isStarting.current = true;
+    if (_gBusy) return;   // already starting or recording
+    if (recordingReady.current) return;
+    _gBusy = true;
 
-    await forceUnload(); // always clean up before creating new
+    // Always unload native session first
+    await _globalUnload();
+    _gBusy = true; // re-set after unload resets it
 
     try {
       var perm = await Audio.requestPermissionsAsync();
       if (!perm.granted) {
-        isStarting.current = false;
+        _gBusy = false;
         setStatus('error');
         setAiResponse('Mic permission nahi mili.');
         return;
@@ -135,41 +156,44 @@ export default function VoiceAssistant({ navigationRef }) {
       var result = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY
       );
-      recordingRef.current   = result.recording;
+      _gRec = result.recording;
+      _gBusy = false;
       recordingReady.current = true;
-      isStarting.current     = false;
-      pressStart.current     = Date.now();
+      pressStart.current = Date.now();
       setStatus('recording');
+      startTimer();
       startPulse();
       startWave();
     } catch (e) {
       console.error('[PrimeAI] Start error:', e && e.message ? e.message : String(e));
-      isStarting.current = false;
+      _gBusy = false;
       recordingReady.current = false;
       setStatus('error');
       setAiResponse('Mic shuru nahi ho paya. Dobara try karein.');
     }
   }
 
-  // ── Stop and send to backend ──────────────────────────────────────────────────
+  // ── Stop and send to backend ──────────────────────────────────────────
   async function stopAndProcess() {
     stopPulse();
     stopWave();
+    stopTimer();
 
-    if (!recordingReady.current || !recordingRef.current) {
+    if (!recordingReady.current || !_gRec) {
       setStatus(primeModeRef.current ? 'ready' : 'idle');
       return;
     }
 
     var elapsed = Date.now() - pressStart.current;
     recordingReady.current = false;
-    var rec = recordingRef.current;
-    recordingRef.current = null;
+    var rec = _gRec;
+    _gRec = null;
 
     if (elapsed < 700) {
       try { await rec.stopAndUnloadAsync(); } catch (_e) { /* ignore */ }
+      try { await Audio.setAudioModeAsync({ allowsRecordingIOS: false }); } catch (_e2) { /* ignore */ }
       setStatus(primeModeRef.current ? 'ready' : 'idle');
-      setAiResponse('Thoda aur boliye...');
+      setAiResponse('Thoda aur boliye ('+elapsed+'ms)...');
       return;
     }
 
@@ -293,12 +317,14 @@ export default function VoiceAssistant({ navigationRef }) {
     });
   }
 
-  // ── Exit Prime Mode ───────────────────────────────────────────────────────────
+  // ── Exit Prime Mode ─────────────────────────────────────────────
   function exitPrimeMode() {
     primeModeRef.current = false;
     setPrimeMode(false);
     setStatus('idle');
-    forceUnload();
+    stopTimer();
+    recordingReady.current = false;
+    _globalUnload();
     Speech.stop();
     Speech.speak('Prime Mode band kiya. Alvida!', { language: 'hi-IN', rate: 0.9 });
   }
@@ -406,7 +432,11 @@ export default function VoiceAssistant({ navigationRef }) {
             {/* Status badge */}
             <View style={[sty.badge, { backgroundColor: statusInfo.color + '18', borderColor: statusInfo.color + '55' }]}>
               <View style={[sty.badgeDot, { backgroundColor: statusInfo.color }]} />
-              <Text style={[sty.badgeTxt, { color: statusInfo.color }]}>{statusInfo.label}</Text>
+              <Text style={[sty.badgeTxt, { color: statusInfo.color }]}>
+                {isRecording
+                  ? 'Listening  ●  0:' + (recordSecs < 10 ? '0' + recordSecs : recordSecs)
+                  : statusInfo.label}
+              </Text>
             </View>
 
             {/* Waveform */}
