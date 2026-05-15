@@ -159,7 +159,7 @@ async def metrics_and_error_middleware(request: Request, call_next):
 
         # Capture to Sentry
         try:
-            import sentry_sdk
+            import sentry_sdk  # type: ignore
             sentry_sdk.capture_exception(exc)
         except Exception:
             pass
@@ -184,6 +184,10 @@ app.include_router(phone.router)        # /phone/*
 app.include_router(notifications.router)
 app.include_router(analytics_router)    # /analytics/*
 app.include_router(esp_router)          # /device/* (ESP8266 IoT)
+
+from backend.voice_ai import router as voice_ai_router
+app.include_router(voice_ai_router, prefix="/voice-ai")
+
 
 
 @app.get("/", tags=["System"], summary="API root")

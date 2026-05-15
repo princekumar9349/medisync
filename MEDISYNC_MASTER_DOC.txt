@@ -1,0 +1,115 @@
+================================================================================
+                            MEDISYNC
+       Intelligent AI-Powered Medication Adherence & Clinical Platform
+================================================================================
+
+## 1. EXECUTIVE SUMMARY
+MediSync is a production-grade healthcare ecosystem designed to bridge the gap between doctor prescriptions and patient medication adherence. It integrates mobile applications, a robust FastAPI backend, state-of-the-art AI (Gemini & Groq), and IoT hardware to ensure patients never miss a dose.
+
+---
+
+## 2. THE PROBLEM STATEMENT
+- **Handwriting Issues:** Patients struggle to read messy handwritten prescriptions.
+- **Non-Adherence:** Forgetting doses leads to chronic health complications.
+- **Complexity:** Elderly patients find traditional healthcare apps difficult.
+- **Doctor Blindness:** Doctors lack visibility into whether patients follow treatments.
+
+---
+
+## 3. COMPREHENSIVE TECH STACK
+
+### A. Mobile Application (Patient & Doctor)
+- **Framework:** React Native with Expo (SDK 54)
+- **Language:** JavaScript / TypeScript
+- **State Management:** Zustand
+- **Navigation:** React Navigation (Bottom Tabs, Native Stack)
+- **Styling:** NativeWind (Tailwind CSS)
+- **Local Storage:** MMKV (High-speed), SQLite, SecureStore
+- **Notifications:** Notifee, FCM, Expo Notifications
+- **Multimedia:** Expo AV (Audio), Expo Speech (TTS), Expo Image Picker (OCR)
+
+### B. Backend Infrastructure
+- **Framework:** FastAPI (Python 3.10+)
+- **Server:** Uvicorn / Gunicorn
+- **Database:** MongoDB (Atlas) & Google Cloud Firestore
+- **Auth:** JWT with Passlib bcrypt hashing
+- **Scheduling:** APScheduler (Cron jobs for reminders)
+- **Observability:** Sentry (Performance & Crash monitoring)
+
+### C. Artificial Intelligence Pipeline
+- **Vision & OCR:** Google Gemini 2.5 Flash (Prescription parsing)
+- **Conversational AI:** Groq Llama-3 70B (Fast, contextual chat)
+- **Speech-to-Text:** Groq Whisper (Multilingual support)
+- **Fuzzy Matching:** TheFuzz (Ensuring medical terminology accuracy)
+
+### D. Communication & Hardware
+- **Voice/SMS:** Twilio API (Automated AI calling)
+- **IoT Controller:** ESP8266 / ESP32 (Smart Pillbox integration)
+- **Storage:** Google Cloud Storage (Media files)
+
+---
+
+## 4. SYSTEM ARCHITECTURE & MODULES
+
+### 4.1. Intelligent Prescription OCR Pipeline
+- Users upload a photo of a prescription.
+- Gemini Vision AI decodes handwriting and abbreviations (BD, TDS, SOS).
+- Normalizes data into medicine names, dosages, timings, and food instructions.
+- Extracts "Patient Memory" (allergies, chronic conditions).
+
+### 4.2. Smart Pillbox & Adherence Tracking
+- Extracted data builds a daily timeline (Morning, Afternoon, Night).
+- Real-time adherence scores calculated based on "Taken" or "Skipped" actions.
+- Automatically calculates medicine expiry and depletion dates.
+
+### 4.3. Multilingual AI Voice Assistant
+- Speaks English and Hindi natively.
+- Transcription via Whisper allows patients to ask questions like "Should I take this on an empty stomach?".
+- Context-aware: AI knows the patient's full medical history.
+
+### 4.4. AI Calling & Escalation Engine (New)
+A 4-tier Intelligent Escalation Logic:
+1. **15 Mins Late:** Standard Push Notification.
+2. **30 Mins Late:** Urgent Push Notification.
+3. **60 Mins Late:** Automated AI Phone Call (Twilio) speaking the user's name and medicine.
+4. **Caregiver Alert:** SMS to emergency contact if 3+ doses are missed.
+
+### 4.5. Doctor-Patient Clinical Bridge
+- Dedicated `DoctorNotificationsScreen` for monitoring patient alerts.
+- Web Dashboard for doctors to view holistic "Adherence Reports".
+- Direct secure messaging between doctor and patient.
+
+---
+
+## 5. USER JOURNEYS
+
+### [Patient Journey]
+1. Register -> Upload Prescription -> AI builds Schedule.
+2. Receive Notification -> Mark as Taken.
+3. Ask AI via Voice: "Should I stop taking these meds if I feel dizzy?" -> AI checks history and advises.
+
+### [Doctor Journey]
+1. Log into Dashboard -> View Patient Roster.
+2. Notice low adherence (e.g., 40%) -> Intervene via secure message.
+3. Review AI-parsed prescriptions to verify accuracy.
+
+---
+
+## 6. SECURITY & DATA PRIVACY
+- **Stateless Auth:** Secure JWT-based sessions.
+- **Safety Fallbacks:** Fuzzy matching against verified medical dictionaries prevents AI hallucinations.
+- **Rate Limiting:** Strict limits on OTPs and API calls.
+- **CORS:** Tightly restricted for production-only domains.
+
+---
+
+## 7. FUTURE ROADMAP
+- **Wearables:** Sync with Apple Health / Google Fit for vitals correlation.
+- **Pharmacy Integration:** Auto-refill orders when meds are running low.
+- **Clinic Multi-tenancy:** Expanding to support entire hospitals.
+- **Advanced IoT:** Bio-metric locked pill dispensers.
+
+---
+*Document Version: 2.1 (Production Ready)*
+*Generated on: 2026-05-15*
+================================================================================

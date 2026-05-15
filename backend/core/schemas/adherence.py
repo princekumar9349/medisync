@@ -6,6 +6,9 @@ class MarkDoneRequest(BaseModel):
     med_id: str
     status: Literal["taken", "missed", "skipped"]
     note: Optional[str] = None
+    slot: Optional[str] = None
+    authoritative_time: Optional[str] = None
+    source: Literal["mobile", "iot", "voice_ai"] = "mobile"
 
 class SymptomCreate(BaseModel):
     user_id: Optional[str] = None
@@ -23,6 +26,7 @@ class DoseLog(BaseModel):
     scheduled_time: Optional[datetime] = None
     delay_minutes: Optional[int] = 0
     note: Optional[str] = None
+    source: Literal["mobile", "iot", "voice_ai"] = "mobile"
 
 class DailyLogPoint(BaseModel):
     date: str

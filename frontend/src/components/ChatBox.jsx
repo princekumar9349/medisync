@@ -22,25 +22,25 @@ const AI_INITIAL = {
 
 // ─── Root Component ───────────────────────────────────────────────────────────
 export default function ChatBox({ language, voiceOn, currentMedicines = [] }) {
-  const [activeTab, setActiveTab]   = useState('ai')   // 'ai' | 'doctor'
+  const [activeTab, setActiveTab] = useState('ai')   // 'ai' | 'doctor'
   const [doctorUnread, setDoctorUnread] = useState(0)
 
   return (
-    <div className="flex flex-col h-[520px] rounded-2xl overflow-hidden shadow-lg border border-slate-100 animate-fade-in bg-white">
+    <div className="flex flex-col rounded-2xl overflow-hidden shadow-lg border border-slate-100 animate-fade-in bg-white" style={{ height: 'calc(100dvh - 160px)', minHeight: 420 }}>
 
       {/* ── Dual Tab Header ─────────────────────────────────────────── */}
       <div className="flex bg-gradient-to-r from-brand-700 to-brand-600">
         <TabBtn
           id="tab-ai"
           label="AI Assistant"
-          icon="🤖"
+          icon=""
           active={activeTab === 'ai'}
           onClick={() => setActiveTab('ai')}
         />
         <TabBtn
           id="tab-doctor"
           label="Doctor"
-          icon="👨‍⚕️"
+          icon=""
           active={activeTab === 'doctor'}
           badge={doctorUnread}
           onClick={() => setActiveTab('doctor')}
@@ -92,13 +92,13 @@ function TabBtn({ id, label, icon, active, badge, onClick }) {
 // AI CHAT
 // ═════════════════════════════════════════════════════════════════════════════
 function AIChat({ language, voiceOn, currentMedicines, onSwitchToDoctor }) {
-  const [messages, setMessages]   = useState([AI_INITIAL])
-  const [input, setInput]         = useState('')
+  const [messages, setMessages] = useState([AI_INITIAL])
+  const [input, setInput] = useState('')
   const [listening, setListening] = useState(false)
-  const [isTyping, setIsTyping]   = useState(false)
-  const bottomRef                 = useRef(null)
-  const recognitionRef            = useRef(null)
-  const inputRef                  = useRef(null)
+  const [isTyping, setIsTyping] = useState(false)
+  const bottomRef = useRef(null)
+  const recognitionRef = useRef(null)
+  const inputRef = useRef(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -165,9 +165,9 @@ function AIChat({ language, voiceOn, currentMedicines, onSwitchToDoctor }) {
         r.interimResults = false
         r.maxAlternatives = 1
         r.continuous = false
-        r.onstart  = () => setListening(true)
-        r.onend    = () => setListening(false)
-        r.onerror  = (e) => {
+        r.onstart = () => setListening(true)
+        r.onend = () => setListening(false)
+        r.onerror = (e) => {
           setListening(false)
           if (e.error === 'not-allowed')
             addMessage('ai', '🎤 Mic permission denied. Allow microphone access in browser settings.')
@@ -191,7 +191,7 @@ function AIChat({ language, voiceOn, currentMedicines, onSwitchToDoctor }) {
       <div className="flex items-center gap-2 px-4 py-1.5 bg-brand-50 border-b border-brand-100">
         <div className={`w-2 h-2 rounded-full ${isTyping ? 'bg-amber-400 animate-pulse' : 'bg-green-400'}`} />
         <span className="text-xs text-brand-700 font-medium">
-          {isTyping ? 'AI is typing…' : 'Online · Powered by Groq LLaMA'}
+          {isTyping ? 'AI is typing…' : 'Online · '}
         </span>
         {listening && (
           <span className="ml-auto text-xs text-red-600 font-semibold animate-pulse">🔴 Listening…</span>
@@ -304,11 +304,11 @@ function AIChat({ language, voiceOn, currentMedicines, onSwitchToDoctor }) {
 // ═════════════════════════════════════════════════════════════════════════════
 function DoctorChat({ language, onUnreadChange }) {
   const [messages, setMessages] = useState([])
-  const [input, setInput]       = useState('')
-  const [sending, setSending]   = useState(false)
-  const [loading, setLoading]   = useState(true)
-  const [error, setError]       = useState(null)
-  const bottomRef               = useRef(null)
+  const [input, setInput] = useState('')
+  const [sending, setSending] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const bottomRef = useRef(null)
 
   // ── Fetch thread on mount ──────────────────────────────────────
   const fetchThread = useCallback(async () => {
@@ -354,7 +354,7 @@ function DoctorChat({ language, onUnreadChange }) {
 
   // ── Sender label & style map ───────────────────────────────────
   const bubbleStyle = {
-    user:   'bg-brand-600 text-white rounded-tr-sm self-end',
+    user: 'bg-brand-600 text-white rounded-tr-sm self-end',
     doctor: 'bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-tl-sm self-start',
     system: 'bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-center text-xs italic self-center max-w-[90%]',
   }
@@ -389,7 +389,7 @@ function DoctorChat({ language, onUnreadChange }) {
         {loading && (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-slate-400">
             <div className="flex gap-1">
-              {[0,1,2].map(i => (
+              {[0, 1, 2].map(i => (
                 <span key={i} className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce"
                   style={{ animationDelay: `${i * 150}ms` }} />
               ))}

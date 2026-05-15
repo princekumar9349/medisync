@@ -81,15 +81,19 @@ def _compute_dose_state(slot_key: str, log_status: Optional[str]) -> dict:
         return {"status": "missed",   "can_take": False, "can_skip": False, "auto_missed": True}
 
 
-def _get_today_log(dose_logs_col, user_id: str, med_id: str) -> Optional[dict]:
+def _get_today_log(dose_logs_col, user_id: str, med_id: str, slot: Optional[str] = None) -> Optional[dict]:
     """Fetch most recent dose log for this med_id today (IST midnight → now)."""
     now_ist = _ist_now()
     today_ist_midnight = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
     # Convert IST midnight to UTC for MongoDB query
     today_utc = today_ist_midnight.astimezone(timezone.utc)
 
+    query = {"user_id": user_id, "med_id": med_id, "timestamp": {"$gte": today_utc}}
+    if slot:
+        query["slot"] = slot
+
     return dose_logs_col.find_one(
-        {"user_id": user_id, "med_id": med_id, "timestamp": {"$gte": today_utc}},
+        query,
         sort=[("timestamp", -1)],
     )
 
@@ -156,7 +160,7 @@ def get_pillbox(current_user: TokenData = Depends(get_current_user)):
                     continue
                 seen.add(dedup_key)
 
-                log = _get_today_log(dose_logs_col, current_user.user_id, med_id)
+                log = _get_today_log(dose_logs_col, current_user.user_id, med_id, slot_key)
                 log_status = log["status"] if log else None
                 state = _compute_dose_state(slot_key, log_status)
 
@@ -235,18 +239,8 @@ def mark_done(
     if dose_logs_col is None:
         raise HTTPException(status_code=503, detail="Database unavailable.")
 
-    # ── Prevent duplicate logs (idempotency) ─────────────────────────────────
-    existing = _get_today_log(dose_logs_col, current_user.user_id, payload.med_id)
-    if existing and existing["status"] in ("taken", "skipped"):
-        return {
-            "message": f"Dose already recorded as '{existing['status']}' today.",
-            "med_id":  payload.med_id,
-            "status":  existing["status"],
-            "duplicate": True,
-        }
-
     # ── Infer slot from existing schedule if not provided ────────────────────
-    slot_key = None
+    slot_key = payload.slot
     medicine_name = payload.med_id
     is_critical = False
 
@@ -258,10 +252,21 @@ def mark_done(
                 if mid == payload.med_id.lower():
                     medicine_name = med.get("name", payload.med_id)
                     is_critical   = med.get("is_critical", False)
-                    slots = _resolve_target_slots(med)
-                    if slots:
-                        slot_key = slots[0]
+                    if not slot_key:
+                        slots = _resolve_target_slots(med)
+                        if slots:
+                            slot_key = slots[0]
                     break
+
+    # ── Prevent duplicate logs (idempotency) ─────────────────────────────────
+    existing = _get_today_log(dose_logs_col, current_user.user_id, payload.med_id, slot_key)
+    if existing and existing["status"] in ("taken", "skipped"):
+        return {
+            "message": f"Dose already recorded as '{existing['status']}' today.",
+            "med_id":  payload.med_id,
+            "status":  existing["status"],
+            "duplicate": True,
+        }
 
     # ── Time-window validation for "taken" action ─────────────────────────────
     if payload.status == "taken" and slot_key:
@@ -291,6 +296,7 @@ def mark_done(
         "delay_minutes": delay_minutes,
         "is_critical":   is_critical,
         "note":          payload.note,
+        "source":        payload.source,
     }
 
     try:

@@ -1,0 +1,93 @@
+# MediSync - Complete Tech Stack & System Architecture
+
+## 1. Project Overview
+MediSync is a smart healthcare ecosystem designed to bridge the gap between patients, doctors, and medication management. It integrates mobile applications, a robust backend, AI-driven insights, and IoT hardware for real-time medication tracking.
+
+---
+
+## 2. Technical Stack
+
+### A. Mobile Application (Frontend)
+- **Framework:** React Native with Expo (SDK 54)
+- **Language:** JavaScript / TypeScript
+- **State Management:** Zustand (Lightweight and performant)
+- **Navigation:** React Navigation (Native Stack & Bottom Tabs)
+- **Styling:** NativeWind (Tailwind CSS for React Native)
+- **Local Storage:** 
+    - MMKV (High-speed key-value storage)
+    - SQLite (Relational data)
+    - SecureStore (Sensitive credentials)
+- **Notifications:** 
+    - Firebase Cloud Messaging (FCM)
+    - Notifee (Advanced local notifications)
+    - Expo Notifications
+- **Multimedia & Interaction:**
+    - Expo AV (Audio/Video support)
+    - Expo Speech (Text-to-Speech)
+    - Expo Image Picker (Prescription scanning)
+- **Build Pipeline:** EAS (Expo Application Services)
+
+### B. Backend Services
+- **Framework:** FastAPI (Python 3.10+)
+- **Server:** Uvicorn (ASGI)
+- **Data Validation:** Pydantic v2
+- **Authentication:** JWT (JSON Web Tokens) with OAuth2 flow, bcrypt for hashing.
+- **Task Scheduling:** APScheduler (For medication reminders and background jobs)
+- **Observability:** Sentry (Error tracking and performance monitoring)
+- **AI Integration:** 
+    - Google Generative AI (Gemini Pro)
+    - Groq (High-speed LLM inference)
+- **Communication:** 
+    - Firebase Admin SDK (Push Notifications)
+    - Twilio (SMS & Voice alerts)
+    - Google Cloud Storage (Media hosting)
+
+### C. Databases
+- **Primary Database:** MongoDB (NoSQL for flexible patient/medication records)
+- **Real-time Data:** Google Cloud Firestore
+- **Local Cache:** SQLite / MMKV on mobile devices.
+
+### D. IoT & Hardware (Pillbox)
+- **Controller:** ESP8266 / ESP32
+- **Protocol:** HTTP/HTTPS or MQTT for backend synchronization.
+- **Features:** Real-time pill dispensing tracking, LED indicators, and emergency alerts.
+
+---
+
+## 3. System Flow & Architecture
+
+### User Authentication Flow
+1. User logs in via the Mobile App.
+2. App sends credentials to FastAPI.
+3. FastAPI validates against MongoDB/Firestore.
+4. JWT token is returned and stored in Mobile SecureStore.
+
+### Medication Management Flow
+1. **Prescription Input:** Patient scans a prescription or enters details manually.
+2. **AI Processing:** Gemini/Groq extracts dosage and timing from images/text.
+3. **Syncing:** Data is saved to the backend and synced with the IoT Pillbox.
+4. **Reminders:**
+    - Backend triggers APScheduler.
+    - FCM sends a push notification to the phone.
+    - IoT Pillbox triggers physical alerts (LEDs/Buzzer).
+
+### Doctor-Patient Interaction
+1. Doctor updates medication or sends a broadcast via `DoctorNotificationsScreen`.
+2. Backend processes the request and updates the Patient's profile.
+3. Patient receives real-time updates via Firestore listeners or Push Notifications.
+
+### Emergency Flow
+1. Patient triggers an SOS from the App or Pillbox.
+2. Backend sends immediate SMS/Voice alerts via Twilio to emergency contacts.
+3. Doctor is notified via the integrated chat system.
+
+---
+
+## 4. Deployment & Infrastructure
+- **Backend Hosting:** Google Cloud Run (Serverless Docker containers)
+- **Mobile Distribution:** Expo EAS (Android APK/AAB and iOS IPA)
+- **CI/CD:** GitHub Actions for automated testing and deployment.
+- **Monitoring:** Sentry for real-time crash reporting.
+
+---
+*Document Generated on: 2026-05-15*

@@ -1,47 +1,178 @@
 /**
- * LoginPage.jsx — Role-aware login screen for Medisync.
- *
- * Supports Patient Login and Doctor Login via a toggle.
- * After login, reads user.role from /me and routes accordingly.
- * JWT is stored in localStorage via AuthContext.
+ * LoginPage.jsx — MediSync Premium Healthcare Login
+ * Exactly matches the mobile app design:
+ * - Dark navy background with floating orbs
+ * - Animated ECG heartbeat line
+ * - Logo with pulse rings
+ * - Glass card with 3-role selector (Patient / Doctor)
+ * - Role-aware accent color throughout
  */
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { apiLogin, apiGetMe, setUser } from '../api'
+import { useAuth } from '../context/AuthContext'
 
-// Role is stored separately because the backend hardcodes role='patient' for all users.
 const ROLE_STORAGE_KEY = 'medisync_ui_role'
 export function saveUiRole(role) { localStorage.setItem(ROLE_STORAGE_KEY, role) }
 export function getUiRole()  { return localStorage.getItem(ROLE_STORAGE_KEY) || 'patient' }
 export function clearUiRole() { localStorage.removeItem(ROLE_STORAGE_KEY) }
-import { useAuth } from '../context/AuthContext'
 
 const ROLES = [
-  { id: 'patient', label: 'Patient', icon: '🧑‍⚕️', desc: 'Manage your prescriptions' },
-  { id: 'doctor',  label: 'Doctor',  icon: '👨‍⚕️', desc: 'Manage your patients' },
+  {
+    id: 'patient',
+    label: 'Patient',
+    iconSvg: 'heart',
+    emoji: '❤️',
+    accent: '#0D9488',
+    accentLight: 'rgba(13,148,136,0.15)',
+    accentBorder: 'rgba(13,148,136,0.5)',
+    gradFrom: '#0D9488',
+    gradTo: '#0F766E',
+    desc: 'Track your medications',
+  },
+  {
+    id: 'doctor',
+    label: 'Doctor',
+    iconSvg: 'medical',
+    emoji: '🩺',
+    accent: '#6366F1',
+    accentLight: 'rgba(99,102,241,0.15)',
+    accentBorder: 'rgba(99,102,241,0.5)',
+    gradFrom: '#6366F1',
+    gradTo: '#4338CA',
+    desc: 'Monitor your patients',
+  },
 ]
 
+// ── Animated ECG heartbeat line ───────────────────────────────────────────────
+function HeartbeatLine({ color }) {
+  return (
+    <div style={{ height: 20, overflow: 'hidden', opacity: 0.4, margin: '10px 0', position: 'relative' }}>
+      <svg width="100%" height="20" viewBox="0 0 400 20" preserveAspectRatio="none">
+        <polyline
+          points="0,10 60,10 80,2 90,18 100,2 110,18 120,10 400,10"
+          fill="none"
+          stroke={color}
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      <div className="ecg-scanner" style={{ background: `linear-gradient(90deg, transparent, ${color}60, transparent)` }} />
+    </div>
+  )
+}
+
+// ── Floating orb ──────────────────────────────────────────────────────────────
+function FloatingOrb({ size, color, style, delay }) {
+  return (
+    <div
+      className="floating-orb"
+      style={{
+        width: size, height: size, borderRadius: '50%',
+        background: `radial-gradient(circle, ${color}40 0%, transparent 70%)`,
+        animationDelay: `${delay}s`,
+        ...style,
+      }}
+    />
+  )
+}
+
+// ── Logo with pulse rings ─────────────────────────────────────────────────────
+function LogoWithRings({ accent }) {
+  return (
+    <div className="logo-ring-wrap">
+      <div className="pulse-ring" style={{ borderColor: accent + '60', animationDelay: '0s' }} />
+      <div className="pulse-ring" style={{ borderColor: accent + '40', animationDelay: '0.9s' }} />
+      <div className="logo-inner-wrap" style={{ borderColor: accent + '60' }}>
+        <img src="/logo.png" alt="MediSync" className="logo-img" />
+      </div>
+    </div>
+  )
+}
+
+// ── Role Tab ──────────────────────────────────────────────────────────────────
+function RoleTab({ role, isActive, onClick }) {
+  return (
+    <button
+      type="button"
+      id={`role-${role.id}`}
+      onClick={onClick}
+      className="role-tab-btn"
+      style={isActive ? {
+        background: role.accentLight,
+        borderColor: role.accentBorder,
+        color: role.accent,
+        boxShadow: `0 0 20px ${role.accent}20`,
+      } : {}}
+    >
+      <span className="role-tab-icon" style={isActive ? { background: role.accent } : {}}>
+        {role.emoji}
+      </span>
+      <div className="role-tab-text">
+        <div className="role-tab-label" style={isActive ? { color: role.accent } : {}}>{role.label}</div>
+        <div className="role-tab-desc">{role.desc}</div>
+      </div>
+    </button>
+  )
+}
+
+// ── Premium Input ─────────────────────────────────────────────────────────────
+function PremiumInput({ icon, type, placeholder, value, onChange, accent, children }) {
+  const [focused, setFocused] = useState(false)
+  return (
+    <div
+      className="premium-input-wrap"
+      style={{ borderColor: focused ? accent : 'rgba(255,255,255,0.1)' }}
+    >
+      <div className="premium-input-icon" style={{ background: focused ? accent + '20' : 'rgba(255,255,255,0.05)' }}>
+        {icon}
+      </div>
+      <input
+        type={type || 'text'}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        className="premium-input-field"
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        autoComplete={type === 'email' ? 'email' : 'current-password'}
+        required
+      />
+      {children}
+    </div>
+  )
+}
+
+// ── Main Login Page ───────────────────────────────────────────────────────────
 export default function LoginPage({ onSwitch }) {
   const { login } = useAuth()
-  const [selectedRole, setSelectedRole] = useState('patient')
-  const [email, setEmail]       = useState('')
-  const [password, setPassword] = useState('')
-  const [loading, setLoading]   = useState(false)
-  const [error, setError]       = useState(null)
-  const [showPw, setShowPw]     = useState(false)
+  const [selectedRole, setSelectedRole] = useState(0)
+  const [email, setEmail]         = useState('')
+  const [password, setPassword]   = useState('')
+  const [loading, setLoading]     = useState(false)
+  const [error, setError]         = useState(null)
+  const [showPw, setShowPw]       = useState(false)
+
+  const role = ROLES[selectedRole]
+
+  function selectRole(idx) {
+    setSelectedRole(idx)
+    setError(null)
+    setEmail('')
+    setPassword('')
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
     if (!email || !password) return
     setLoading(true)
     setError(null)
-
     try {
       await apiLogin(email.trim(), password)
       const profile = await apiGetMe()
-      // Override role with UI selection because backend hardcodes 'patient' for everyone
-      const profileWithRole = { ...profile, role: selectedRole }
-      saveUiRole(selectedRole)
+      const profileWithRole = { ...profile, role: role.id }
+      saveUiRole(role.id)
       setUser(profileWithRole)
       login(profileWithRole)
     } catch (err) {
@@ -51,146 +182,121 @@ export default function LoginPage({ onSwitch }) {
     }
   }
 
-  const isDoctor = selectedRole === 'doctor'
-  const accentFrom = isDoctor ? 'from-emerald-500' : 'from-brand-500'
-  const accentTo   = isDoctor ? 'to-teal-600'      : 'to-brand-700'
-  const ringClass  = isDoctor ? 'focus:ring-emerald-300' : 'focus:ring-brand-300'
-  const btnClass   = isDoctor
-    ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200'
-    : 'bg-brand-600 hover:bg-brand-700 shadow-brand-200'
-
   return (
-    <div className="auth-page">
-      {/* Decorative blobs */}
-      <div className="auth-orb" />
-      <div className="auth-orb-2" />
+    <div className="ms-login-page">
+      {/* Dark gradient background */}
+      <div className="ms-login-bg" />
 
-      <div className="auth-card animate-scale-in">
+      {/* Floating orbs */}
+      <FloatingOrb size={320} color={role.accent} delay={0}
+        style={{ position: 'absolute', top: -80, left: -100 }} />
+      <FloatingOrb size={240} color={role.accent} delay={0.6}
+        style={{ position: 'absolute', top: 160, right: -80 }} />
+      <FloatingOrb size={180} color="#6366F1" delay={1.2}
+        style={{ position: 'absolute', bottom: 60, left: -40 }} />
 
-        {/* Logo */}
-        <div className="flex flex-col items-center mb-6">
-          <img src="/logo.png" alt="Medisync Logo" className="w-16 h-16 rounded-2xl shadow-xl mb-4 transition-all duration-300 object-cover bg-white" />
-          <h1 className="text-2xl font-extrabold text-slate-800 tracking-tight">
-            Welcome back
-          </h1>
-          <p className="text-slate-400 text-sm mt-1">Sign in to your Medisync account</p>
+      {/* ── Hero Section (top) ── */}
+      <div className="ms-hero">
+        <LogoWithRings accent={role.accent} />
+        <h1 className="ms-brand">MEDISYNC</h1>
+
+        <HeartbeatLine color={role.accent} />
+
+        {/* Trust badges */}
+        <div className="ms-trust-row">
+          {[
+            { icon: '🛡️', text: 'HIPAA Safe' },
+            { icon: '🔒', text: 'Encrypted' },
+            { icon: '🤖', text: '' },
+          ].map(b => (
+            <div key={b.text} className="ms-trust-badge" style={{ color: role.accent + 'CC' }}>
+              <span>{b.icon}</span>
+              <span>{b.text}</span>
+            </div>
+          ))}
         </div>
+      </div>
 
-        {/* Role Toggle */}
-        <div className="flex bg-slate-100 rounded-xl p-1 mb-6">
-          {ROLES.map(role => (
-            <button
-              key={role.id}
-              id={`role-${role.id}`}
-              type="button"
-              onClick={() => { setSelectedRole(role.id); setError(null) }}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold
-                          transition-all duration-200
-                          ${selectedRole === role.id
-                            ? 'bg-white shadow text-slate-800'
-                            : 'text-slate-400 hover:text-slate-600'
-                          }`}
-            >
-              <span>{role.icon}</span>
-              {role.label}
-            </button>
+      {/* ── Glass Card ── */}
+      <div className="ms-glass-card animate-scale-in">
+        {/* Accent top line */}
+        <div className="ms-card-accent-line" style={{ background: role.accent }} />
+
+        <h2 className="ms-card-title">Sign In</h2>
+        <p className="ms-card-sub">Choose your role to continue</p>
+
+        {/* Role Tabs */}
+        <div className="ms-role-tabs">
+          {ROLES.map((r, i) => (
+            <RoleTab key={r.id} role={r} isActive={i === selectedRole} onClick={() => selectRole(i)} />
           ))}
         </div>
 
-        {/* Role Description */}
-        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl mb-5 text-xs font-medium
-                         transition-all duration-200
-                         ${isDoctor ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-brand-50 text-brand-700 border border-brand-100'}`}>
-          <span>{ROLES.find(r => r.id === selectedRole)?.icon}</span>
-          {isDoctor
-            ? 'Logging in as a Doctor — you\'ll see the Doctor Panel'
-            : 'Logging in as a Patient — you\'ll see your health dashboard'}
+        {/* Role descriptor pill */}
+        <div className="ms-role-pill" style={{ background: role.accentLight }}>
+          <span>{role.emoji}</span>
+          <span style={{ color: role.accent, fontWeight: 700, fontSize: 13 }}>{role.desc}</span>
         </div>
 
         {/* Error */}
         {error && (
-          <div className="auth-error mb-4">
-            <span className="text-sm">⚠️ {error}</span>
+          <div className="ms-error-box">
+            <span>⚠️</span>
+            <span>{error}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Email */}
-          <div>
-            <label className="auth-label">Email address</label>
-            <input
-              id="login-email"
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              className={`auth-input ${ringClass}`}
-              autoComplete="email"
-              required
-            />
-          </div>
+        {/* Form */}
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 4 }}>
+          <PremiumInput
+            icon="✉️"
+            type="email"
+            placeholder="Email Address"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            accent={role.accent}
+          />
 
-          {/* Password */}
-          <div>
-            <label className="auth-label">Password</label>
-            <div className="relative">
-              <input
-                id="login-password"
-                type={showPw ? 'text' : 'password'}
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className={`auth-input pr-12 ${ringClass}`}
-                autoComplete="current-password"
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowPw(p => !p)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400
-                           hover:text-slate-600 transition-colors"
-              >
-                {showPw ? '🙈' : '👁️'}
-              </button>
-            </div>
-          </div>
+          <PremiumInput
+            icon="🔒"
+            type={showPw ? 'text' : 'password'}
+            placeholder="Password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            accent={role.accent}
+          >
+            <button type="button" className="ms-eye-btn" onClick={() => setShowPw(p => !p)}>
+              {showPw ? '🙈' : '👁️'}
+            </button>
+          </PremiumInput>
 
           {/* Submit */}
           <button
             id="login-btn"
             type="submit"
             disabled={loading || !email || !password}
-            className={`btn-primary mt-2 ${btnClass}`}
+            className="ms-submit-btn"
+            style={{
+              background: `linear-gradient(90deg, ${role.gradFrom}, ${role.gradTo})`,
+              boxShadow: `0 4px 24px ${role.accent}50`,
+              opacity: (loading || !email || !password) ? 0.5 : 1,
+            }}
           >
             {loading ? (
-              <>
-                <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                Signing in…
-              </>
+              <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Signing in…</>
             ) : (
-              <>
-                {isDoctor ? '👨‍⚕️' : '⚕️'} Sign in as {isDoctor ? 'Doctor' : 'Patient'}
-              </>
+              <>{role.emoji} Sign in as {role.label} <span style={{ marginLeft: 'auto' }}>→</span></>
             )}
           </button>
         </form>
 
-        {/* Switch */}
-        <p className="text-center text-sm text-slate-500 mt-5">
-          Don't have an account?{' '}
-          <button
-            id="go-register"
-            onClick={onSwitch}
-            className={`font-semibold hover:underline transition-colors
-                        ${isDoctor ? 'text-emerald-600' : 'text-brand-600'}`}
-          >
-            Create one
+        {/* Register link */}
+        <p className="ms-register-row">
+          New to MediSync?{' '}
+          <button id="go-register" type="button" onClick={onSwitch} className="ms-register-link"
+            style={{ color: role.accent }}>
+            Create Account →
           </button>
-        </p>
-
-        {/* Hint */}
-        <p className="text-center text-[10px] text-slate-400 mt-3">
-          🔒 Your data is encrypted and HIPAA-compliant
         </p>
       </div>
     </div>
