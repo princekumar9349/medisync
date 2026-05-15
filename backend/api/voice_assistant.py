@@ -19,7 +19,7 @@ from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from groq import Groq
 
 from api.auth import get_current_user
-from db import database
+from db.database import get_prescriptions, get_users
 
 router = APIRouter(tags=["Voice AI Processor"])
 logger = logging.getLogger("Medisync.VoiceAI.Processor")
@@ -35,7 +35,7 @@ GROQ_KEYS = [
 # ── Fetch user medicines from DB ───────────────────────────────────────────────
 def _get_user_medicines(user_id: str) -> list:
     try:
-        rx_col = database.get_prescriptions()
+        rx_col = get_prescriptions()
         if rx_col is None:
             return []
         docs = list(rx_col.find({"user_id": user_id, "is_active": True}, {"medicines": 1}))
@@ -49,9 +49,10 @@ def _get_user_medicines(user_id: str) -> list:
                     "afternoon": med.get("afternoon", False),
                     "night":     med.get("night", False),
                 })
+        logger.info(f"[VoiceAI] Loaded {len(medicines)} medicines for user {user_id}")
         return medicines
     except Exception as e:
-        logger.warning(f"Could not fetch medicines: {e}")
+        logger.warning(f"[VoiceAI] Could not fetch medicines: {e}")
         return []
 
 
