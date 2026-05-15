@@ -839,3 +839,23 @@ export async function apiMarkDoseSkipped(med_id, slot = '', authoritative_time =
 export async function apiSendTestPush() {
   return apiFetch('/notifications/test-push', { method: 'POST' });
 }
+
+// ─── Voice AI / DTMF Calling ───────────────────────────────────────────────────
+
+/**
+ * Initiate an outbound DTMF medicine reminder call via Twilio.
+ * The patient will receive a call asking them to press 1 (taken) or 2 (not taken).
+ *
+ * @param {string} phone_number  - E.164 format e.g. "+919876543210"
+ * @param {string} user_id       - The patient's user ID
+ * @param {string} med_id        - Medicine ID (use "test" for a demo call)
+ * @param {string} medicine_name - Name of the medicine spoken in the call
+ * @param {string} slot          - Dose slot e.g. "morning", "afternoon", "night"
+ * @param {boolean} is_critical  - Whether this is a critical medicine
+ */
+export async function apiInitiateVoiceCall({ phone_number, user_id, med_id, medicine_name, slot, is_critical = false }) {
+  return apiFetch('/voice-ai/initiate', {
+    method: 'POST',
+    body: JSON.stringify({ phone_number, user_id, med_id, medicine_name, slot, is_critical }),
+  });
+}

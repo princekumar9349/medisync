@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime, timedelta
 from db import database
 
@@ -9,7 +10,46 @@ from routers.voice import send_push_sync
 
 logger = logging.getLogger("Medisync.EscalationEngine")
 
-def evaluate_dose(user_id: str, med_name: str, slot: str, med_id: str, slot_time: datetime, now: datetime, is_critical: bool, caregiver_phone: str, expo_push_token: str, fcm_tokens: list):
+
+def _trigger_dtmf_reminder_call(user_id: str, phone_number: str, med_id: str, medicine_name: str, slot: str, is_critical: bool) -> None:
+    """
+    Fires an outbound DTMF reminder call via the voice_ai module.
+    Patient presses 1 (taken) or 2 (not taken) — dose is logged automatically.
+    """
+    try:
+        from voice_ai.handlers.adherence_updater import process_voice_adherence
+        from services.voice_provider import voice_client, TwilioVoiceProvider
+        import urllib.parse
+
+        if not isinstance(voice_client, TwilioVoiceProvider) or not voice_client.client:
+            logger.warning("Twilio not configured — skipping DTMF escalation call.")
+            return
+
+        base_url = os.getenv("PUBLIC_API_URL", "")
+        if not base_url:
+            logger.error("PUBLIC_API_URL not set — cannot build Twilio webhook URL for DTMF call.")
+            return
+
+        webhook_url = (
+            f"{base_url}/voice-ai/webhook"
+            f"?user_id={user_id}"
+            f"&med_id={med_id}"
+            f"&medicine_name={urllib.parse.quote(medicine_name)}"
+            f"&slot={urllib.parse.quote(slot)}"
+            f"&is_critical={str(is_critical).lower()}"
+        )
+
+        call = voice_client.client.calls.create(
+            url=webhook_url,
+            to=phone_number,
+            from_=voice_client.from_number,
+            method="POST"
+        )
+        logger.info(f"📞 DTMF escalation call initiated: SID={call.sid} → {phone_number} for {medicine_name}")
+    except Exception as e:
+        logger.error(f"DTMF escalation call failed: {e}")
+
+def evaluate_dose(user_id: str, med_name: str, slot: str, med_id: str, slot_time: datetime, now: datetime, is_critical: bool, caregiver_phone: str, expo_push_token: str, fcm_tokens: list, patient_phone: str = "", **kwargs):
     """
     Core escalation rules engine.
     Ensures idempotency. Checks if taken. Determines level. Logs history. Triggers push/alert.
@@ -75,11 +115,22 @@ def evaluate_dose(user_id: str, med_name: str, slot: str, med_id: str, slot_time
     logger.info(f"Escalation [{level}] for {med_name} ({slot}) user {str(user_id)[:8]}")
 
     # 6. Execute Notification Action
-    success = _execute_notification(level, user_id, med_name, slot, med_id, expo_push_token, fcm_tokens, caregiver_phone)
+    success = _execute_notification(
+        level=level,
+        user_id=user_id,
+        med_name=med_name,
+        slot=slot,
+        med_id=med_id,
+        expo_push_token=expo_push_token,
+        fcm_tokens=fcm_tokens,
+        caregiver_phone=caregiver_phone,
+        patient_phone=kwargs.get("patient_phone", ""),
+        is_critical=is_critical
+    )
     if success:
         EscalationHistory.update_delivery_status(history_id, EscalationStatus.DELIVERED)
 
-def _execute_notification(level: str, user_id: str, med_name: str, slot: str, med_id: str, expo_push_token: str, fcm_tokens: list, caregiver_phone: str) -> bool:
+def _execute_notification(level: str, user_id: str, med_name: str, slot: str, med_id: str, expo_push_token: str, fcm_tokens: list, caregiver_phone: str, patient_phone: str = "", is_critical: bool = False) -> bool:
     from core.constants.notification_types import NotificationType
     
     title = ""
@@ -106,9 +157,18 @@ def _execute_notification(level: str, user_id: str, med_name: str, slot: str, me
         title = f"🚨 URGENT Caretaker Alert"
         body = f"Patient is 30+ minutes late for {med_name}. Please intervene."
         msg_type = NotificationType.CAREGIVER_ALERT
-        # Optionally trigger Twilio here in the future
-        if caregiver_phone:
-            pass # TODO: Twilio SMS via caregiver/alerts.py
+        # Fire a DTMF reminder call to the patient so they can confirm via keypress
+        if patient_phone:
+            _trigger_dtmf_reminder_call(
+                user_id=user_id,
+                phone_number=patient_phone,
+                med_id=med_id,
+                medicine_name=med_name,
+                slot=slot,
+                is_critical=is_critical
+            )
+        elif caregiver_phone:
+            logger.info(f"No patient phone — skipping DTMF call. Caregiver notified via push.")
 
     data_payload = {
         "type": msg_type,
