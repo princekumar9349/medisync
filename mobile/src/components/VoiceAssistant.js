@@ -1,30 +1,26 @@
 /**
  * VoiceAssistant.js — MEDISYNC CORE AI In-App Voice Control
  *
- * Features:
- *  - Floating mic button visible on all screens
- *  - Press & hold to record audio (expo-audio SDK 54+)
- *  - Release → sends to backend /voice-ai/process (Groq Whisper + LLaMA-3)
- *  - Executes actions: navigate, mark medicine, emergency, open slot, etc.
- *  - Speaks AI response via expo-speech (TTS)
- *  - Animated pulse, listening waveform, status overlay
+ * FIX: Use onPressIn to start recording (fires immediately on touch)
+ *      instead of onLongPress — which caused a race condition where
+ *      onPressOut fired before the recording even started.
  *
- * Uses expo-audio (replaces deprecated expo-av in SDK 54)
+ * Uses expo-av Audio.Recording.createAsync() for reliable single-step init.
  */
 
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Animated, Platform,
   Pressable, Alert, Modal,
 } from 'react-native';
-import { useAudioRecorder, requestRecordingPermissionsAsync, RecordingPresets } from 'expo-audio';
+import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE } from '../services/api';
 import { COLORS, FONTS, RADIUS } from '../theme';
 
-// ── Screen name map: CORE AI screen → React Navigation screen name ────────────
+// ── Screen name map ────────────────────────────────────────────────────────────
 const SCREEN_MAP = {
   home:               'PatientDashboard',
   history:            'History',
@@ -44,13 +40,12 @@ const SCREEN_MAP = {
   calling_settings:   'CallingSettings',
 };
 
-// ── Status config ─────────────────────────────────────────────────────────────
-const STATUS = {
-  idle:       { label: 'Hold mic to speak',  color: COLORS.brand600 },
-  recording:  { label: 'Listening...',        color: '#EF4444' },
-  processing: { label: 'Thinking...',         color: '#F59E0B' },
-  speaking:   { label: 'Speaking...',         color: '#10B981' },
-  error:      { label: 'Try again',           color: COLORS.slate500 },
+const STATUS_CFG = {
+  idle:       { label: 'Hold mic to speak',   color: COLORS.brand600 },
+  recording:  { label: 'Listening...',         color: '#EF4444' },
+  processing: { label: 'Thinking...',          color: '#F59E0B' },
+  speaking:   { label: 'Speaking...',          color: '#10B981' },
+  error:      { label: 'Try again',            color: COLORS.slate500 },
 };
 
 export default function VoiceAssistant({ navigationRef }) {
@@ -60,31 +55,25 @@ export default function VoiceAssistant({ navigationRef }) {
   const [aiResponse, setAiResponse] = useState('');
   const [lastAction, setLastAction] = useState('');
 
-  // expo-audio recorder hook
-  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-
-  const isRecordingRef  = useRef(false);
-  const recordStartTime = useRef(0);
+  // Recording state refs (not useState — avoids stale closures in handlers)
+  const recordingRef    = useRef(null);   // Audio.Recording instance
+  const recordingReady  = useRef(false);  // true only after createAsync resolves
+  const pressStartTime  = useRef(0);
 
   // Animations
   const pulseAnim  = useRef(new Animated.Value(1)).current;
   const pulseAnim2 = useRef(new Animated.Value(1)).current;
   const waveAnims  = Array.from({ length: 5 }, () => useRef(new Animated.Value(0.3)).current);
 
-  // ── Pulse animation ─────────────────────────────────────────────────────────
   const startPulse = useCallback(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim,  { toValue: 1.22, duration: 500, useNativeDriver: true }),
-        Animated.timing(pulseAnim,  { toValue: 1,    duration: 500, useNativeDriver: true }),
-      ])
-    ).start();
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim2, { toValue: 1.38, duration: 700, useNativeDriver: true }),
-        Animated.timing(pulseAnim2, { toValue: 1,    duration: 700, useNativeDriver: true }),
-      ])
-    ).start();
+    Animated.loop(Animated.sequence([
+      Animated.timing(pulseAnim,  { toValue: 1.2,  duration: 500, useNativeDriver: true }),
+      Animated.timing(pulseAnim,  { toValue: 1,    duration: 500, useNativeDriver: true }),
+    ])).start();
+    Animated.loop(Animated.sequence([
+      Animated.timing(pulseAnim2, { toValue: 1.38, duration: 700, useNativeDriver: true }),
+      Animated.timing(pulseAnim2, { toValue: 1,    duration: 700, useNativeDriver: true }),
+    ])).start();
   }, [pulseAnim, pulseAnim2]);
 
   const stopPulse = useCallback(() => {
@@ -94,16 +83,13 @@ export default function VoiceAssistant({ navigationRef }) {
     Animated.timing(pulseAnim2, { toValue: 1, duration: 150, useNativeDriver: true }).start();
   }, [pulseAnim, pulseAnim2]);
 
-  // ── Wave animation ──────────────────────────────────────────────────────────
   const startWave = useCallback(() => {
     waveAnims.forEach((anim, i) => {
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(i * 90),
-          Animated.timing(anim, { toValue: 1,   duration: 220, useNativeDriver: true }),
-          Animated.timing(anim, { toValue: 0.3, duration: 220, useNativeDriver: true }),
-        ])
-      ).start();
+      Animated.loop(Animated.sequence([
+        Animated.delay(i * 90),
+        Animated.timing(anim, { toValue: 1,   duration: 220, useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 0.3, duration: 220, useNativeDriver: true }),
+      ])).start();
     });
   }, []);
 
@@ -114,108 +100,132 @@ export default function VoiceAssistant({ navigationRef }) {
     });
   }, []);
 
-  // ── Get auth token ──────────────────────────────────────────────────────────
   async function getToken() {
     try { return await AsyncStorage.getItem('medisync_token'); }
     catch { return null; }
   }
 
-  // ── Start recording ─────────────────────────────────────────────────────────
-  async function startRecording() {
-    if (isRecordingRef.current) return;
+  // ── onPressIn — START RECORDING IMMEDIATELY ──────────────────────────────────
+  async function handlePressIn() {
+    setVisible(true); // open panel
+
+    // Reset state
+    setTranscript('');
+    setAiResponse('');
+    setLastAction('');
+    setStatus('recording');
+
     try {
-      const { granted } = await requestRecordingPermissionsAsync();
+      const { granted } = await Audio.requestPermissionsAsync();
       if (!granted) {
-        Alert.alert('Permission Denied', 'Mic permission is required for voice control.');
+        setStatus('error');
+        setAiResponse('Mic permission nahi mili. Settings mein jaake allow karein.');
         return;
       }
-      await audioRecorder.record();
-      isRecordingRef.current = true;
-      recordStartTime.current = Date.now();
-      setStatus('recording');
-      setTranscript('');
-      setAiResponse('');
-      setLastAction('');
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS:     true,
+        playsInSilentModeIOS:   true,
+        shouldDuckAndroid:      true,
+        playThroughEarpieceAndroid: false,
+      });
+
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+
+      recordingRef.current   = recording;
+      recordingReady.current = true;
+      pressStartTime.current = Date.now();
+
       startPulse();
       startWave();
+
     } catch (e) {
-      console.error('[VoiceAI] Start recording error:', e);
+      console.error('[VoiceAI] Start error:', e);
+      recordingReady.current = false;
       setStatus('error');
+      setAiResponse('Mic shuru nahi ho paya. Dobara try karein.');
     }
   }
 
-  // ── Stop recording & process ─────────────────────────────────────────────────
-  async function stopAndProcess() {
-    if (!isRecordingRef.current) return;
-    isRecordingRef.current = false;
+  // ── onPressOut — STOP & PROCESS ──────────────────────────────────────────────
+  async function handlePressOut() {
     stopPulse();
     stopWave();
 
-    const elapsed = Date.now() - recordStartTime.current;
-
-    // Must record for at least 600ms to have valid audio
-    if (elapsed < 600) {
+    // Guard: recording must be ready
+    if (!recordingReady.current || !recordingRef.current) {
       setStatus('idle');
-      setAiResponse('Thoda aur der boliye...');
       return;
     }
 
+    const elapsed = Date.now() - pressStartTime.current;
+    recordingReady.current = false;
+    const rec = recordingRef.current;
+    recordingRef.current   = null;
+
+    // Must hold for at least 700ms
+    if (elapsed < 700) {
+      try { await rec.stopAndUnloadAsync(); } catch {}
+      setStatus('idle');
+      setAiResponse('Thoda aur der boliye... (button hold karein)');
+      return;
+    }
+
+    setStatus('processing');
+
     try {
-      await audioRecorder.stop();
-      const uri = audioRecorder.uri;
+      await rec.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+
+      const uri = rec.getURI();
+      console.log('[VoiceAI] Recording URI:', uri, '| duration:', elapsed, 'ms');
 
       if (!uri) {
         setStatus('error');
-        setAiResponse('Audio capture nahi ho paya. Dobara try karein.');
+        setAiResponse('Audio capture nahi hua. Dobara try karein.');
         return;
       }
 
-      setStatus('processing');
-
       const token = await getToken();
       if (!token) {
-        setAiResponse('Pehle app mein login karein.');
         setStatus('error');
+        setAiResponse('Pehle app mein login karein.');
         Speech.speak('Pehle app mein login karein.', { language: 'hi-IN', rate: 0.9 });
         return;
       }
 
-      // Send audio to backend
+      // Send to backend
       const form = new FormData();
-      form.append('audio', {
-        uri,
-        name: 'voice.m4a',
-        type: 'audio/m4a',
-      });
+      form.append('audio', { uri, name: 'voice.m4a', type: 'audio/m4a' } as any);
 
       const resp = await fetch(`${API_BASE}/voice-ai/process`, {
-        method: 'POST',
+        method:  'POST',
         headers: { Authorization: `Bearer ${token}` },
-        body: form,
+        body:    form,
       });
 
       if (!resp.ok) {
-        const err = await resp.text();
-        console.warn('[VoiceAI] Backend error:', err);
+        const errText = await resp.text();
+        console.warn('[VoiceAI] Backend error:', resp.status, errText);
         setStatus('error');
-        setAiResponse('Backend se response nahi aaya.');
-        Speech.speak('Server se response nahi aaya. Dobara try karein.', { language: 'hi-IN' });
+        setAiResponse(`Backend error ${resp.status}. Dobara try karein.`);
         return;
       }
 
       const action = await resp.json();
-      console.log('[VoiceAI] Action:', JSON.stringify(action));
+      console.log('[VoiceAI] Action:', action.action, '| conf:', action.confidence, '| transcript:', action.transcript);
 
       setTranscript(action.transcript || '');
-      setAiResponse(action.response || '');
-      setLastAction(action.action || '');
+      setAiResponse(action.response  || '');
+      setLastAction(action.action    || '');
 
-      // Speak response
       if (action.response) {
         setStatus('speaking');
         Speech.speak(action.response, {
-          language: 'hi-IN',
-          rate: 0.9,
+          language:  'hi-IN',
+          rate:      0.9,
           onDone:    () => setStatus('idle'),
           onStopped: () => setStatus('idle'),
           onError:   () => setStatus('idle'),
@@ -224,166 +234,145 @@ export default function VoiceAssistant({ navigationRef }) {
         setStatus('idle');
       }
 
-      // Execute action
       executeAction(action);
 
-    } catch (e) {
-      console.error('[VoiceAI] Process error:', e);
+    } catch (e: any) {
+      console.error('[VoiceAI] Process error:', e?.message || e);
       setStatus('error');
-      setAiResponse('Kuch galat hua. Dobara try karein.');
+      setAiResponse('Kuch galat hua: ' + (e?.message || 'unknown'));
     }
   }
 
-  // ── Execute CORE AI action in-app ────────────────────────────────────────────
-  function executeAction(action) {
+  // ── Execute action ────────────────────────────────────────────────────────────
+  function executeAction(action: any) {
     const act = action.action;
     const nav  = navigationRef?.current;
 
-    // Navigation
     if (act === 'navigate_screen' && action.screen && nav) {
-      const screenName = SCREEN_MAP[action.screen] || action.screen;
-      try { setTimeout(() => nav.navigate(screenName), 700); } catch (e) { console.warn('[VoiceAI] Nav error:', e); }
+      const screen = SCREEN_MAP[action.screen as keyof typeof SCREEN_MAP] || action.screen;
+      try { setTimeout(() => (nav as any).navigate(screen), 800); } catch {}
       return;
     }
-
-    // Emergency
     if (act === 'emergency_alert' || act === 'sos_mode') {
-      try { setTimeout(() => nav?.navigate('Emergency'), 300); } catch {}
+      try { setTimeout(() => (nav as any)?.navigate('Emergency'), 300); } catch {}
       return;
     }
-
-    // Open Chat
     if (act === 'open_chat' || act === 'send_chat_message') {
       try {
-        setTimeout(() => {
-          nav?.navigate('Chat', { prefillMessage: action.payload?.message || '' });
-        }, 700);
+        setTimeout(() => (nav as any)?.navigate('Chat', {
+          prefillMessage: action.payload?.message || '',
+        }), 800);
       } catch {}
       return;
     }
-
-    // Slot alert
     if (act === 'open_slot' && action.slot) {
-      setTimeout(() => {
-        Alert.alert('🔓 Pillbox', `Slot ${action.slot} open kiya ja raha hai!`, [{ text: 'OK' }]);
-      }, 500);
+      setTimeout(() => Alert.alert('🔓 Pillbox', `Slot ${action.slot} open kiya ja raha hai!`), 500);
     }
   }
 
-  // ── UI ──────────────────────────────────────────────────────────────────────
-  const statusInfo = STATUS[status] || STATUS.idle;
+  // ── Render ────────────────────────────────────────────────────────────────────
+  const statusInfo  = STATUS_CFG[status as keyof typeof STATUS_CFG] || STATUS_CFG.idle;
   const isRecording = status === 'recording';
 
   return (
     <>
       {/* ── Floating Mic Button ─────────────────────────────────────────────── */}
-      <View style={styles.floatWrap} pointerEvents="box-none">
-        {/* Outer pulse ring */}
+      <View style={sty.floatWrap} pointerEvents="box-none">
         {isRecording && (
-          <Animated.View style={[styles.pulseOuter, { transform: [{ scale: pulseAnim2 }] }]} />
-        )}
-        {/* Inner pulse ring */}
-        {isRecording && (
-          <Animated.View style={[styles.pulseInner, { transform: [{ scale: pulseAnim }] }]} />
+          <>
+            <Animated.View style={[sty.pulseOuter, { transform: [{ scale: pulseAnim2 }] }]} />
+            <Animated.View style={[sty.pulseInner, { transform: [{ scale: pulseAnim  }] }]} />
+          </>
         )}
         <Pressable
-          style={[styles.micBtn, isRecording && styles.micBtnRec]}
-          onLongPress={() => { setVisible(true); startRecording(); }}
-          onPressOut={() => { if (isRecordingRef.current) stopAndProcess(); }}
-          onPress={() => setVisible(true)}
-          delayLongPress={100}
+          style={[sty.micBtn, isRecording && sty.micBtnRec]}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
         >
-          <Ionicons name={isRecording ? 'mic' : 'mic-outline'} size={26} color={COLORS.white} />
+          <Ionicons name={isRecording ? 'mic' : 'mic-outline'} size={26} color="#fff" />
         </Pressable>
       </View>
 
       {/* ── Voice Panel Modal ───────────────────────────────────────────────── */}
-      <Modal
-        visible={visible}
-        transparent
-        animationType="slide"
+      <Modal visible={visible} transparent animationType="slide"
         onRequestClose={() => { Speech.stop(); setVisible(false); setStatus('idle'); }}
       >
-        <Pressable
-          style={styles.backdrop}
+        <Pressable style={sty.backdrop}
           onPress={() => { Speech.stop(); setVisible(false); setStatus('idle'); }}
         >
-          <Pressable style={styles.panel} onPress={() => {}}>
+          <Pressable style={sty.panel} onPress={() => {}}>
 
             {/* Header */}
-            <View style={styles.panelRow}>
-              <View style={styles.coreDot} />
-              <Text style={styles.panelTitle}>MEDISYNC CORE AI</Text>
+            <View style={sty.row}>
+              <View style={sty.coreDot} />
+              <Text style={sty.panelTitle}>MEDISYNC CORE AI</Text>
               <TouchableOpacity onPress={() => { Speech.stop(); setVisible(false); setStatus('idle'); }}>
                 <Ionicons name="close-circle" size={24} color={COLORS.slate400} />
               </TouchableOpacity>
             </View>
 
-            {/* Status badge */}
-            <View style={[styles.badge, { backgroundColor: statusInfo.color + '1A', borderColor: statusInfo.color + '55' }]}>
-              <View style={[styles.badgeDot, { backgroundColor: statusInfo.color }]} />
-              <Text style={[styles.badgeText, { color: statusInfo.color }]}>{statusInfo.label}</Text>
+            {/* Status */}
+            <View style={[sty.badge, { backgroundColor: statusInfo.color + '18', borderColor: statusInfo.color + '55' }]}>
+              <View style={[sty.badgeDot, { backgroundColor: statusInfo.color }]} />
+              <Text style={[sty.badgeTxt, { color: statusInfo.color }]}>{statusInfo.label}</Text>
             </View>
 
             {/* Waveform */}
-            <View style={styles.waveRow}>
+            <View style={sty.waveRow}>
               {waveAnims.map((anim, i) => (
-                <Animated.View key={i} style={[styles.waveBar, {
-                  transform: [{ scaleY: anim }],
-                  backgroundColor: isRecording ? '#EF4444' : statusInfo.color + 'AA',
+                <Animated.View key={i} style={[sty.waveBar, {
+                  transform:       [{ scaleY: anim }],
+                  backgroundColor: isRecording ? '#EF4444BB' : statusInfo.color + '88',
                 }]} />
               ))}
             </View>
 
             {/* Transcript */}
             {transcript !== '' && (
-              <View style={styles.transcriptBox}>
-                <Text style={styles.transcriptLabel}>Aapne kaha:</Text>
-                <Text style={styles.transcriptText}>"{transcript}"</Text>
+              <View style={sty.transcriptBox}>
+                <Text style={sty.transcriptLbl}>Aapne kaha:</Text>
+                <Text style={sty.transcriptTxt}>"{transcript}"</Text>
               </View>
             )}
 
             {/* AI Response */}
             {aiResponse !== '' && (
-              <View style={styles.responseBox}>
-                <View style={styles.responseRow}>
+              <View style={sty.responseBox}>
+                <View style={sty.row}>
                   <Ionicons name="sparkles" size={13} color={COLORS.brand600} />
-                  <Text style={styles.responseLabel}>MEDISYNC AI</Text>
+                  <Text style={sty.responseLbl}> MEDISYNC AI</Text>
                   {lastAction !== '' && (
-                    <View style={styles.actionChip}>
-                      <Text style={styles.actionChipText}>{lastAction}</Text>
-                    </View>
+                    <View style={sty.chip}><Text style={sty.chipTxt}>{lastAction}</Text></View>
                   )}
                 </View>
-                <Text style={styles.responseText}>{aiResponse}</Text>
+                <Text style={sty.responseTxt}>{aiResponse}</Text>
               </View>
             )}
 
-            {/* Mic Button */}
-            <View style={styles.micArea}>
-              <Text style={styles.hint}>Press & hold to speak</Text>
+            {/* Big mic button in panel */}
+            <View style={sty.micArea}>
+              <Text style={sty.hint}>
+                {isRecording ? '🔴  Release to send' : 'Press & hold to speak'}
+              </Text>
               <Pressable
-                style={[styles.bigMic, isRecording && styles.bigMicRec]}
-                onLongPress={startRecording}
-                onPressOut={() => { if (isRecordingRef.current) stopAndProcess(); }}
-                delayLongPress={100}
+                style={[sty.bigMic, isRecording && sty.bigMicRec]}
+                onPressIn={handlePressIn}
+                onPressOut={handlePressOut}
               >
                 <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-                  <Ionicons name={isRecording ? 'mic' : 'mic-outline'} size={40} color={COLORS.white} />
+                  <Ionicons name={isRecording ? 'mic' : 'mic-outline'} size={40} color="#fff" />
                 </Animated.View>
               </Pressable>
-              <Text style={styles.hintSub}>
-                {isRecording ? 'Release to send' : 'Try: "Profile page kholo"'}
-              </Text>
+              <Text style={sty.hintSub}>Try: "Profile page kholo" · "Next medicine kya hai"</Text>
             </View>
 
             {/* Quick commands */}
-            <View style={styles.quickRow}>
-              {['Medicines dikhao', 'Next medicine', 'Emergency', 'Analytics kholo'].map(cmd => (
-                <TouchableOpacity key={cmd} style={styles.quickChip}
+            <View style={sty.quickRow}>
+              {['Medicines dikhao', 'Analytics kholo', 'Emergency', 'Slot 1 kholo'].map(cmd => (
+                <TouchableOpacity key={cmd} style={sty.quickChip}
                   onPress={() => Speech.speak(cmd, { language: 'hi-IN' })}
                 >
-                  <Text style={styles.quickText}>{cmd}</Text>
+                  <Text style={sty.quickTxt}>{cmd}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -396,26 +385,21 @@ export default function VoiceAssistant({ navigationRef }) {
 }
 
 // ── Styles ─────────────────────────────────────────────────────────────────────
-const styles = StyleSheet.create({
-  // Floating
+const sty = StyleSheet.create({
   floatWrap: {
     position: 'absolute',
     bottom: Platform.OS === 'ios' ? 106 : 92,
     right: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
     zIndex: 9999,
   },
   pulseOuter: {
-    position: 'absolute',
-    width: 76, height: 76, borderRadius: 38,
-    backgroundColor: '#EF444418',
-    borderWidth: 1.5, borderColor: '#EF444440',
+    position: 'absolute', width: 76, height: 76, borderRadius: 38,
+    backgroundColor: '#EF444415', borderWidth: 1.5, borderColor: '#EF444435',
   },
   pulseInner: {
-    position: 'absolute',
-    width: 66, height: 66, borderRadius: 33,
-    backgroundColor: '#EF444428',
+    position: 'absolute', width: 66, height: 66, borderRadius: 33,
+    backgroundColor: '#EF444425',
   },
   micBtn: {
     width: 56, height: 56, borderRadius: 28,
@@ -423,63 +407,54 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     ...Platform.select({
       android: { elevation: 8 },
-      ios: { shadowColor: COLORS.brand700, shadowOpacity: 0.4, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+      ios: { shadowColor: '#1e40af', shadowOpacity: 0.4, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
     }),
   },
   micBtnRec: { backgroundColor: '#EF4444' },
 
-  // Modal
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', justifyContent: 'flex-end' },
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   panel: {
-    backgroundColor: COLORS.white,
+    backgroundColor: '#fff',
     borderTopLeftRadius: 28, borderTopRightRadius: 28,
     paddingHorizontal: 22, paddingTop: 18, paddingBottom: 38, gap: 14,
   },
 
-  // Header
-  panelRow:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  row:       { flexDirection: 'row', alignItems: 'center', gap: 10 },
   coreDot:   { width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.brand600 },
-  panelTitle: { flex: 1, fontSize: FONTS.sm, fontWeight: FONTS.bold, color: COLORS.slate800, letterSpacing: 1.4 },
+  panelTitle:{ flex: 1, fontSize: FONTS.sm, fontWeight: FONTS.bold, color: COLORS.slate800, letterSpacing: 1.3 },
 
-  // Badge
-  badge: { flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 7, borderRadius: RADIUS.full, borderWidth: 1 },
-  badgeDot:  { width: 8, height: 8, borderRadius: 4 },
-  badgeText: { fontSize: FONTS.sm, fontWeight: FONTS.semibold },
+  badge:    { flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 7, borderRadius: 99, borderWidth: 1 },
+  badgeDot: { width: 8, height: 8, borderRadius: 4 },
+  badgeTxt: { fontSize: FONTS.sm, fontWeight: FONTS.semibold },
 
-  // Waveform
   waveRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, height: 40 },
   waveBar: { width: 5, height: 30, borderRadius: 3 },
 
-  // Transcript
-  transcriptBox: { backgroundColor: COLORS.slate50, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: COLORS.border },
-  transcriptLabel: { fontSize: FONTS.xs, color: COLORS.slate400, fontWeight: FONTS.semibold, marginBottom: 3 },
-  transcriptText:  { fontSize: FONTS.base, color: COLORS.slate700, fontStyle: 'italic' },
+  transcriptBox: { backgroundColor: '#F8FAFC', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: COLORS.border },
+  transcriptLbl: { fontSize: FONTS.xs, color: COLORS.slate400, fontWeight: FONTS.semibold, marginBottom: 3 },
+  transcriptTxt: { fontSize: FONTS.base, color: COLORS.slate700, fontStyle: 'italic' },
 
-  // Response
   responseBox: { backgroundColor: COLORS.brand50, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: COLORS.brand200 },
-  responseRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
-  responseLabel: { fontSize: FONTS.xs, fontWeight: FONTS.bold, color: COLORS.brand600, flex: 1 },
-  actionChip: { backgroundColor: COLORS.brand600, borderRadius: RADIUS.full, paddingHorizontal: 8, paddingVertical: 2 },
-  actionChipText: { fontSize: 10, color: COLORS.white, fontWeight: FONTS.bold },
-  responseText: { fontSize: FONTS.base, color: COLORS.slate800, lineHeight: 22 },
+  responseLbl: { fontSize: FONTS.xs, fontWeight: FONTS.bold, color: COLORS.brand600, flex: 1 },
+  chip:        { backgroundColor: COLORS.brand600, borderRadius: 99, paddingHorizontal: 8, paddingVertical: 2 },
+  chipTxt:     { fontSize: 10, color: '#fff', fontWeight: FONTS.bold },
+  responseTxt: { fontSize: FONTS.base, color: COLORS.slate800, lineHeight: 22, marginTop: 6 },
 
-  // Mic area
-  micArea:  { alignItems: 'center', gap: 8, paddingVertical: 6 },
-  hint:     { fontSize: FONTS.sm, color: COLORS.slate400 },
-  hintSub:  { fontSize: FONTS.xs, color: COLORS.slate400, textAlign: 'center' },
+  micArea: { alignItems: 'center', gap: 8, paddingVertical: 6 },
+  hint:    { fontSize: FONTS.sm, color: COLORS.slate500, fontWeight: FONTS.medium },
+  hintSub: { fontSize: FONTS.xs, color: COLORS.slate400, textAlign: 'center', marginTop: 4 },
   bigMic: {
-    width: 78, height: 78, borderRadius: 39,
+    width: 80, height: 80, borderRadius: 40,
     backgroundColor: COLORS.brand600,
     alignItems: 'center', justifyContent: 'center',
     ...Platform.select({
       android: { elevation: 6 },
-      ios: { shadowColor: COLORS.brand700, shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 5 } },
+      ios: { shadowColor: '#1e40af', shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 5 } },
     }),
   },
   bigMicRec: { backgroundColor: '#EF4444' },
 
-  // Quick commands
-  quickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' },
-  quickChip: { backgroundColor: COLORS.brand50, borderRadius: RADIUS.full, paddingHorizontal: 13, paddingVertical: 7, borderWidth: 1, borderColor: COLORS.brand200 },
-  quickText: { fontSize: FONTS.xs, color: COLORS.brand700, fontWeight: FONTS.semibold },
+  quickRow:  { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' },
+  quickChip: { backgroundColor: COLORS.brand50, borderRadius: 99, paddingHorizontal: 13, paddingVertical: 7, borderWidth: 1, borderColor: COLORS.brand200 },
+  quickTxt:  { fontSize: FONTS.xs, color: COLORS.brand700, fontWeight: FONTS.semibold },
 });
