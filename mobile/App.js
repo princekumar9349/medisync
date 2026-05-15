@@ -29,6 +29,7 @@ import { startNetworkListener, stopNetworkListener } from './src/sync/network';
 import { flushSyncQueue } from './src/sync/retry';
 import { ToastProvider } from './src/components/Toast';
 import NetworkStatusBanner from './src/components/NetworkStatusBanner';
+import VoiceAssistant from './src/components/VoiceAssistant';
 
 // ─── Production Safety: Silence Logs ──────────────────────────────────────────
 if (!__DEV__) {
@@ -185,6 +186,8 @@ export default function App() {
                 navigationRef={navigationRef}
                 onReady={onNavigationReady}
               />
+              {/* MEDISYNC CORE AI — Floating Voice Assistant (all screens) */}
+              <VoiceAssistant navigationRef={navigationRef} />
               <StatusBar style="auto" />
             </ToastProvider>
           </AppThemeProvider>

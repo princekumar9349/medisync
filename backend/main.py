@@ -188,6 +188,9 @@ app.include_router(esp_router)          # /device/* (ESP8266 IoT)
 from voice_ai import router as voice_ai_router
 app.include_router(voice_ai_router, prefix="/voice-ai")
 
+from api.voice_assistant import router as va_router
+app.include_router(va_router)           # /voice-ai/process (MEDISYNC CORE AI)
+
 
 
 @app.get("/", tags=["System"], summary="API root")
