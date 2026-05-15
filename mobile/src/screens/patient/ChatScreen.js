@@ -1,17 +1,24 @@
 /**
  * ChatScreen.js — Premium Healthcare Chat (AI + Doctor)
- * Uses: AppHeader (branded), parseAIResponse (safe parser), TTS voice
+ *
+ * FIXES:
+ *  1. KeyboardAvoidingView — input always visible above keyboard & tab bar
+ *  2. SafeAreaView with insets to handle notch + tab bar correctly
+ *  3. AI chat fetches user's medicines from backend and injects as context
+ *  4. Proper error display: err?.message, never raw objects
  */
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView,
   KeyboardAvoidingView, Platform, ActivityIndicator, Animated,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import * as Speech from 'expo-speech';
 import { Ionicons } from '@expo/vector-icons';
 import AppHeader, { AppHeaderBtn } from '../../components/AppHeader';
 import parseAIResponse from '../../utils/parseAIResponse';
-import { apiChat, apiSendDoctorMessage, apiGetDoctorMessages } from '../../services/api';
+import { apiChat, apiSendDoctorMessage, apiGetDoctorMessages, apiGetPrescriptions } from '../../services/api';
 import { COLORS, FONTS, SPACING, RADIUS, S } from '../../theme';
 
 // ─── Markdown-lite (bold **text**) ───────────────────────────────────────────
@@ -75,10 +82,10 @@ function SpeakerBtn({ id, text, lang }) {
 
 // ─── Message bubble ───────────────────────────────────────────────────────────
 function Bubble({ m, lang }) {
-  const isUser   = m.role === 'user';
+  const isUser = m.role === 'user';
   const isDoctor = m.role === 'doctor';
-  const isSys    = m.role === 'system';
-  const isAlert  = m.type === 'alert';
+  const isSys = m.role === 'system';
+  const isAlert = m.type === 'alert';
   const ts = m.ts ? new Date(m.ts).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
 
   if (isAlert) return (
@@ -131,20 +138,45 @@ function Bubble({ m, lang }) {
 const QUICK_EN = ['What medicines am I on?', 'I missed my dose — what now?', 'Is it safe to skip a day?'];
 const QUICK_HI = ['मुझे क्या दवा लेनी है?', 'दवा भूल गया — क्या करूँ?', 'क्या एक दिन छोड़ना ठीक है?'];
 
+// Tab bar height constant for keyboard offset calculation
+const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 83 : 65;
+
 function AIPane({ lang }) {
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabBarHeight();
+
   const welcome = {
     id: 'w0', role: 'ai', ts: new Date().toISOString(),
     text: lang === 'hi'
       ? 'नमस्ते! मैं MediSync का AI स्वास्थ्य सहायक हूँ। दवाओं, लक्षणों या स्वास्थ्य संबंधी कुछ भी पूछें।'
       : "Hello! I'm your MediSync AI health assistant. Ask me about your medicines, symptoms, or health guidance.",
   };
+
   const [msgs, setMsgs] = useState([welcome]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [medicines, setMedicines] = useState([]);
   const scrollRef = useRef(null);
   const uid = useRef(1);
 
-  useEffect(() => { setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80); }, [msgs, busy]);
+  // Fetch medicines on mount to inject into AI context
+  useEffect(() => {
+    apiGetPrescriptions(1, 0)
+      .then(data => {
+        const meds = data?.prescriptions?.[0]?.medicines || data?.medicines || [];
+        if (meds.length > 0) {
+          setMedicines(meds);
+          console.log(`[ChatScreen] Loaded ${meds.length} medicines for AI context`);
+        }
+      })
+      .catch(err => {
+        console.warn('[ChatScreen] Could not load medicines for context:', err?.message || String(err));
+      });
+  }, []);
+
+  useEffect(() => {
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
+  }, [msgs, busy]);
 
   async function send(override) {
     const text = (override ?? input).trim();
@@ -153,18 +185,25 @@ function AIPane({ lang }) {
     setMsgs(p => [...p, { id: `u${uid.current++}`, role: 'user', ts: new Date().toISOString(), text }]);
     setBusy(true);
     try {
-      const raw = await apiChat(text, lang, {});
+      // Build medicine context for the AI
+      const userData = medicines.length > 0
+        ? { medicines }
+        : {};
+
+      console.log('[ChatScreen] Sending with context:', JSON.stringify(userData));
+
+      const raw = await apiChat(text, lang, userData);
       const reply = parseAIResponse(raw,
         lang === 'hi' ? 'माफ करें, अभी जवाब देना संभव नहीं है।' : "Sorry, I couldn't generate a response right now."
       );
       setMsgs(p => [...p, { id: `a${uid.current++}`, role: 'ai', ts: new Date().toISOString(), text: reply }]);
     } catch (err) {
-      console.error('[ChatScreen] apiChat error:', err?.message || err);
+      console.error('[ChatScreen] apiChat error:', err?.message || String(err));
       const errMsg = err?.message?.includes('timed out')
         ? (lang === 'hi' ? 'सर्वर से कनेक्शन टाइम आउट हुआ। कृपया इंटरनेट जांचें।' : 'Connection timed out. Please check your internet.')
         : err?.message?.includes('401')
-        ? (lang === 'hi' ? 'सत्र समाप्त हो गया। कृपया दोबारा लॉगिन करें।' : 'Session expired. Please log in again.')
-        : (lang === 'hi' ? 'एक त्रुटि हुई: ' + (err?.message || 'अज्ञात') : 'Error: ' + (err?.message || 'Unknown error. Please retry.'));
+          ? (lang === 'hi' ? 'सत्र समाप्त हो गया। कृपया दोबारा लॉगिन करें।' : 'Session expired. Please log in again.')
+          : (lang === 'hi' ? 'एक त्रुटि हुई: ' + (err?.message || 'अज्ञात') : 'Error: ' + (err?.message || 'Unknown error. Please retry.'));
       setMsgs(p => [...p, {
         id: `e${uid.current++}`, role: 'ai', ts: new Date().toISOString(), text: errMsg,
       }]);
@@ -173,9 +212,22 @@ function AIPane({ lang }) {
 
   const QUICK = lang === 'hi' ? QUICK_HI : QUICK_EN;
 
+  // keyboardVerticalOffset: AppHeader (~56px) + Tab Switch bar (~48px)
+  const headerOffset = Platform.OS === 'ios' ? 56 + 48 : 56 + 48;
+
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 120 : 80}>
-      <ScrollView ref={scrollRef} style={sty.list} contentContainerStyle={{ padding: SPACING.lg, paddingBottom: 16 }} showsVerticalScrollIndicator={false}>
+    <KeyboardAvoidingView
+      style={{ flex: 1, marginBottom: tabBarHeight }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={headerOffset}
+    >
+      <ScrollView
+        ref={scrollRef}
+        style={sty.list}
+        contentContainerStyle={{ padding: SPACING.lg, paddingBottom: 16 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         {msgs.map(m => <Bubble key={m.id} m={m} lang={lang} />)}
         {busy && (
           <View style={sty.row}>
@@ -187,7 +239,9 @@ function AIPane({ lang }) {
 
       {msgs.length <= 1 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false}
-          style={{ paddingHorizontal: SPACING.lg, paddingBottom: 8, maxHeight: 46 }}>
+          style={{ paddingHorizontal: SPACING.lg, paddingBottom: 8, maxHeight: 46 }}
+          keyboardShouldPersistTaps="handled"
+        >
           {QUICK.map((q, i) => (
             <TouchableOpacity key={i} style={sty.quick} onPress={() => send(q)} activeOpacity={0.8}>
               <Text style={sty.quickTxt}>{q}</Text>
@@ -196,15 +250,27 @@ function AIPane({ lang }) {
         </ScrollView>
       )}
 
-      <View style={sty.bar}>
-        <TextInput style={sty.inp} value={input} onChangeText={setInput}
+      <View style={[sty.bar, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 8 : 12) }]}>
+        <TextInput
+          style={sty.inp}
+          value={input}
+          onChangeText={setInput}
           placeholder={lang === 'hi' ? 'स्वास्थ्य प्रश्न पूछें…' : 'Ask a health question…'}
-          placeholderTextColor={COLORS.slate400} onSubmitEditing={() => send()}
-          returnKeyType="send" editable={!busy} multiline />
-        <TouchableOpacity style={[sty.sendBtn, { opacity: (!input.trim() || busy) ? 0.38 : 1 }]}
-          onPress={() => send()} disabled={!input.trim() || busy} activeOpacity={0.85}>
+          placeholderTextColor={COLORS.slate400}
+          onSubmitEditing={() => send()}
+          returnKeyType="send"
+          editable={!busy}
+          multiline
+          blurOnSubmit={false}
+        />
+        <TouchableOpacity
+          style={[sty.sendBtn, { opacity: (!input.trim() || busy) ? 0.38 : 1 }]}
+          onPress={() => send()}
+          disabled={!input.trim() || busy}
+          activeOpacity={0.85}
+        >
           {busy ? <ActivityIndicator size="small" color={COLORS.white} />
-                : <Ionicons name="send" size={16} color={COLORS.white} style={{ marginLeft: 2 }} />}
+            : <Ionicons name="send" size={16} color={COLORS.white} style={{ marginLeft: 2 }} />}
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -213,21 +279,24 @@ function AIPane({ lang }) {
 
 // ─── Doctor Chat ──────────────────────────────────────────────────────────────
 function DoctorPane({ lang, onRegisterRefresh }) {
-  const [msgs,    setMsgs]    = useState([]);
-  const [input,   setInput]   = useState('');
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabBarHeight();
+  const [msgs, setMsgs] = useState([]);
+  const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [error,   setError]   = useState(null);
+  const [error, setError] = useState(null);
   const scrollRef = useRef(null);
-  const pollRef   = useRef(null);
+  const pollRef = useRef(null);
 
   const fetchMsgs = useCallback(async () => {
     try {
       const data = await apiGetDoctorMessages();
       setMsgs(data.messages || []);
       setError(null);
-    } catch { setError('Could not load messages.'); }
-    finally { setLoading(false); }
+    } catch (err) {
+      setError(err?.message || 'Could not load messages.');
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => {
@@ -246,19 +315,33 @@ function DoctorPane({ lang, onRegisterRefresh }) {
     try {
       const data = await apiSendDoctorMessage(text);
       setMsgs(data.messages || []);
-    } catch { setError('Failed to send.'); }
-    finally { setSending(false); }
+    } catch (err) {
+      setError(err?.message || 'Failed to send.');
+    } finally { setSending(false); }
   }
 
+  // keyboardVerticalOffset: AppHeader (~56px) + Tab Switch bar (~48px)
+  const headerOffset = Platform.OS === 'ios' ? 56 + 48 : 56 + 48;
+
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 120 : 80}>
+    <KeyboardAvoidingView
+      style={{ flex: 1, marginBottom: tabBarHeight }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={headerOffset}
+    >
       {/* Secure banner */}
       <View style={sty.secureBanner}>
         <View style={sty.secureDot} />
         <Text style={sty.secureText}>End-to-end secure · MediSync Doctor Network</Text>
       </View>
 
-      <ScrollView ref={scrollRef} style={sty.list} contentContainerStyle={{ padding: SPACING.lg, paddingBottom: 16 }} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollRef}
+        style={sty.list}
+        contentContainerStyle={{ padding: SPACING.lg, paddingBottom: 16 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         {loading && <View style={[S.center, { paddingVertical: 60 }]}><ActivityIndicator color={COLORS.brand600} /><Text style={sty.loadingTxt}>Loading messages…</Text></View>}
 
         {error && !loading && (
@@ -285,15 +368,27 @@ function DoctorPane({ lang, onRegisterRefresh }) {
         })}
       </ScrollView>
 
-      <View style={sty.bar}>
-        <TextInput style={sty.inp} value={input} onChangeText={setInput}
+      <View style={[sty.bar, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 8 : 12) }]}>
+        <TextInput
+          style={sty.inp}
+          value={input}
+          onChangeText={setInput}
           placeholder={lang === 'hi' ? 'डॉक्टर को संदेश…' : 'Message your doctor…'}
-          placeholderTextColor={COLORS.slate400} onSubmitEditing={send}
-          returnKeyType="send" editable={!sending} multiline />
-        <TouchableOpacity style={[sty.sendBtn, { opacity: (!input.trim() || sending) ? 0.38 : 1 }]}
-          onPress={send} disabled={!input.trim() || sending} activeOpacity={0.85}>
+          placeholderTextColor={COLORS.slate400}
+          onSubmitEditing={send}
+          returnKeyType="send"
+          editable={!sending}
+          multiline
+          blurOnSubmit={false}
+        />
+        <TouchableOpacity
+          style={[sty.sendBtn, { opacity: (!input.trim() || sending) ? 0.38 : 1 }]}
+          onPress={send}
+          disabled={!input.trim() || sending}
+          activeOpacity={0.85}
+        >
           {sending ? <ActivityIndicator size="small" color={COLORS.white} />
-                   : <Ionicons name="send" size={16} color={COLORS.white} style={{ marginLeft: 2 }} />}
+            : <Ionicons name="send" size={16} color={COLORS.white} style={{ marginLeft: 2 }} />}
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -323,7 +418,7 @@ export default function ChatScreen({ route, navigation }) {
     <View style={S.screen}>
       <AppHeader
         title={tab === 'ai' ? 'AI Assistant' : 'Doctor Chat'}
-        subtitle={tab === 'ai' ? 'MediSync · Powered by Groq AI' : 'Secure Healthcare Messaging'}
+        subtitle={tab === 'ai' ? 'MediSync · Powered by MediAI' : 'Secure Healthcare Messaging'}
         right={headerRight}
       />
 
@@ -346,57 +441,56 @@ export default function ChatScreen({ route, navigation }) {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const sty = StyleSheet.create({
-  tabs:    { flexDirection: 'row', backgroundColor: COLORS.white, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  tab:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 13, borderBottomWidth: 2.5, borderBottomColor: 'transparent' },
-  tabOn:   { borderBottomColor: COLORS.brand600 },
-  tabLbl:  { fontSize: FONTS.sm, fontWeight: FONTS.medium, color: COLORS.slate400 },
-  tabLblOn:{ color: COLORS.brand600, fontWeight: FONTS.bold },
+  tabs: { flexDirection: 'row', backgroundColor: COLORS.white, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 13, borderBottomWidth: 2.5, borderBottomColor: 'transparent' },
+  tabOn: { borderBottomColor: COLORS.brand600 },
+  tabLbl: { fontSize: FONTS.sm, fontWeight: FONTS.medium, color: COLORS.slate400 },
+  tabLblOn: { color: COLORS.brand600, fontWeight: FONTS.bold },
 
-  list:    { flex: 1, backgroundColor: '#F0F4F8' },
-  row:     { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  list: { flex: 1, backgroundColor: '#F0F4F8' },
+  row: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   rowUser: { justifyContent: 'flex-end' },
 
-  avatar:    { width: 32, height: 32, borderRadius: 16, backgroundColor: COLORS.brand100, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: COLORS.brand300 },
+  avatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: COLORS.brand100, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: COLORS.brand300 },
   avatarDoc: { backgroundColor: COLORS.brand600, borderColor: COLORS.brand700 },
   senderLbl: { fontSize: 10, fontWeight: FONTS.bold, color: COLORS.slate400, marginBottom: 3, marginLeft: 2 },
 
   bubble: { borderRadius: 20, paddingHorizontal: 15, paddingVertical: 11, maxWidth: '100%' },
-  bUser:  { backgroundColor: COLORS.brand600, borderBottomRightRadius: 4 },
-  bDoc:   { backgroundColor: COLORS.brand700, borderBottomLeftRadius: 4 },
-  bAI:    { backgroundColor: COLORS.white, borderBottomLeftRadius: 4, borderWidth: 1, borderColor: COLORS.border, ...Platform.select({ android: { elevation: 2 }, ios: { shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } } }) },
-  bTxt:   { fontSize: FONTS.base, color: COLORS.slate800, lineHeight: 22 },
+  bUser: { backgroundColor: COLORS.brand600, borderBottomRightRadius: 4 },
+  bDoc: { backgroundColor: COLORS.brand700, borderBottomLeftRadius: 4 },
+  bAI: { backgroundColor: COLORS.white, borderBottomLeftRadius: 4, borderWidth: 1, borderColor: COLORS.border, ...Platform.select({ android: { elevation: 2 }, ios: { shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } } }) },
+  bTxt: { fontSize: FONTS.base, color: COLORS.slate800, lineHeight: 22 },
 
-  alertCard:  { backgroundColor: COLORS.red50, borderWidth: 1.5, borderColor: COLORS.red200, borderRadius: RADIUS.lg, padding: SPACING.lg, marginBottom: SPACING.md },
+  alertCard: { backgroundColor: COLORS.red50, borderWidth: 1.5, borderColor: COLORS.red200, borderRadius: RADIUS.lg, padding: SPACING.lg, marginBottom: SPACING.md },
   alertTitle: { fontSize: FONTS.base, fontWeight: FONTS.bold, color: COLORS.red700 },
-  alertBody:  { fontSize: FONTS.sm, color: COLORS.red800, lineHeight: 20, marginTop: 2 },
+  alertBody: { fontSize: FONTS.sm, color: COLORS.red800, lineHeight: 20, marginTop: 2 },
 
-  sysRow:  { alignItems: 'center', marginVertical: 8 },
+  sysRow: { alignItems: 'center', marginVertical: 8 },
   sysPill: { backgroundColor: COLORS.slate100, borderRadius: RADIUS.full, paddingHorizontal: 14, paddingVertical: 5 },
-  sysTxt:  { fontSize: FONTS.xs, color: COLORS.slate500, fontStyle: 'italic' },
+  sysTxt: { fontSize: FONTS.xs, color: COLORS.slate500, fontStyle: 'italic' },
 
   typingRow: { flexDirection: 'row', alignItems: 'center', gap: 5, padding: 6 },
-  dot:       { width: 7, height: 7, borderRadius: 4, backgroundColor: COLORS.brand400 },
-  speaker:   { width: 28, height: 28, borderRadius: 14, backgroundColor: COLORS.slate100, alignItems: 'center', justifyContent: 'center' },
-  tsLbl:     { fontSize: 10, color: COLORS.slate400 },
+  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: COLORS.brand400 },
+  speaker: { width: 28, height: 28, borderRadius: 14, backgroundColor: COLORS.slate100, alignItems: 'center', justifyContent: 'center' },
+  tsLbl: { fontSize: 10, color: COLORS.slate400 },
 
-  // ✅ Fix: paddingBottom 12 so bar sits just above tab navigator (not 80 — which was too high)
-  bar:     { flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: SPACING.lg, paddingTop: SPACING.md, paddingBottom: Platform.OS === 'ios' ? 28 : 12, backgroundColor: COLORS.white, borderTopWidth: 1, borderTopColor: COLORS.border },
-  inp:     { flex: 1, backgroundColor: '#F7F9FC', borderWidth: 1.5, borderColor: COLORS.border, borderRadius: 24, paddingHorizontal: 16, paddingVertical: Platform.OS === 'ios' ? 12 : 10, fontSize: FONTS.base, color: COLORS.slate800, maxHeight: 100 },
+  // Input bar — paddingBottom controlled dynamically via insets
+  bar: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: SPACING.lg, paddingTop: SPACING.md, paddingBottom: 12, backgroundColor: COLORS.white, borderTopWidth: 1, borderTopColor: COLORS.border },
+  inp: { flex: 1, backgroundColor: '#F7F9FC', borderWidth: 1.5, borderColor: COLORS.border, borderRadius: 24, paddingHorizontal: 16, paddingVertical: Platform.OS === 'ios' ? 12 : 10, fontSize: FONTS.base, color: COLORS.slate800, maxHeight: 100 },
   sendBtn: { width: 46, height: 46, borderRadius: 23, backgroundColor: COLORS.brand600, alignItems: 'center', justifyContent: 'center' },
 
-  quick:    { backgroundColor: COLORS.brand50, borderWidth: 1.5, borderColor: COLORS.brand200, borderRadius: RADIUS.full, paddingHorizontal: 14, paddingVertical: 9, marginRight: 8 },
+  quick: { backgroundColor: COLORS.brand50, borderWidth: 1.5, borderColor: COLORS.brand200, borderRadius: RADIUS.full, paddingHorizontal: 14, paddingVertical: 9, marginRight: 8 },
   quickTxt: { fontSize: FONTS.sm, color: COLORS.brand700, fontWeight: FONTS.semibold },
 
   secureBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, backgroundColor: '#F0FDF4', borderBottomWidth: 1, borderBottomColor: '#BBF7D0' },
-  secureDot:    { width: 7, height: 7, borderRadius: 4, backgroundColor: COLORS.emerald500 },
-  secureText:   { fontSize: FONTS.xs, color: COLORS.emerald700, fontWeight: FONTS.semibold },
+  secureDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: COLORS.emerald500 },
+  secureText: { fontSize: FONTS.xs, color: COLORS.emerald700, fontWeight: FONTS.semibold },
 
   loadingTxt: { color: COLORS.slate400, marginTop: 12, fontSize: FONTS.sm },
-  errCard:    { alignItems: 'center', padding: SPACING.xl, backgroundColor: COLORS.amber50, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: '#FDE68A', margin: SPACING.lg },
-  errTxt:     { color: COLORS.amber800, fontSize: FONTS.sm, marginTop: 8, textAlign: 'center' },
-  retryBtn:   { marginTop: 12, paddingHorizontal: 20, paddingVertical: 8, backgroundColor: COLORS.white, borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.brand200 },
-  emptyIcon:  { width: 72, height: 72, borderRadius: 36, backgroundColor: COLORS.brand50, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+  errCard: { alignItems: 'center', padding: SPACING.xl, backgroundColor: COLORS.amber50, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: '#FDE68A', margin: SPACING.lg },
+  errTxt: { color: COLORS.amber800, fontSize: FONTS.sm, marginTop: 8, textAlign: 'center' },
+  retryBtn: { marginTop: 12, paddingHorizontal: 20, paddingVertical: 8, backgroundColor: COLORS.white, borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.brand200 },
+  emptyIcon: { width: 72, height: 72, borderRadius: 36, backgroundColor: COLORS.brand50, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
   emptyTitle: { fontSize: FONTS.lg, fontWeight: FONTS.bold, color: COLORS.slate800, marginBottom: 6 },
-  emptyDesc:  { fontSize: FONTS.sm, color: COLORS.slate500, textAlign: 'center', maxWidth: 260, lineHeight: 20 },
+  emptyDesc: { fontSize: FONTS.sm, color: COLORS.slate500, textAlign: 'center', maxWidth: 260, lineHeight: 20 },
 });
-

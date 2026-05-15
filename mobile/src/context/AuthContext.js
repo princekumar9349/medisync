@@ -76,7 +76,9 @@ export function AuthProvider({ children }) {
     if (uiRole) await saveUiRole(uiRole);
     await setUser(merged);
     setUserState(merged);
+    // ✅ Fix: Register both FCM + Expo push tokens after login
     _registerPushToken();
+    _registerFCMTokenAfterLogin();
   }
 
   // ── Push token registration (best-effort) ─────────────────────────────────
@@ -119,6 +121,35 @@ export function AuthProvider({ children }) {
       if (tokenData?.data) await apiRegisterPushToken(tokenData.data);
     } catch (_) {
       // Optional — fail silently
+    }
+  }
+
+  // ── FCM Token Registration after login (best-effort) ─────────────────────
+  async function _registerFCMTokenAfterLogin() {
+    try {
+      // Try Firebase FCM token first
+      const messaging = require('@react-native-firebase/messaging').default;
+      const authStatus = await messaging().requestPermission();
+      const isAuthorized = authStatus === 1 || authStatus === 2;
+      if (!isAuthorized) return;
+
+      const fcmToken = await messaging().getToken();
+      if (fcmToken) {
+        const { apiRegisterFCMToken } = await import('../services/api');
+        await apiRegisterFCMToken(fcmToken, '', Platform.OS);
+        await AsyncStorage.setItem('@medisync_fcm_token', fcmToken);
+        console.log('[Auth] FCM token registered after login');
+      }
+    } catch (e) {
+      // Firebase not available or failed — try Expo token as fallback
+      try {
+        const stored = await AsyncStorage.getItem('@medisync_fcm_token');
+        if (stored) {
+          const { apiRegisterFCMToken } = await import('../services/api');
+          await apiRegisterFCMToken(stored, '', Platform.OS);
+          console.log('[Auth] Stored FCM token re-registered after login');
+        }
+      } catch {}
     }
   }
 

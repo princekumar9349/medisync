@@ -322,8 +322,10 @@ export default function ProfileScreen() {
 
 
         {/* Tools */}
-        <Text style={[S.sectionTitle, { marginTop: SPACING.md }]}>Tools & Testing</Text>
+        <Text style={[S.sectionTitle, { marginTop: SPACING.md }]}>Presentation Tools</Text>
         <View style={S.card}>
+          <ActionRow icon="play-circle" label="Demo Mode" description="Launch AI Voice Confirmation presentation" accent={COLORS.purple600} onPress={() => navigation.navigate('DemoScenario')} />
+          <View style={S.divider} />
           <ActionRow icon="mic" label="Test Voice Assistant" description="Hear a sample greeting" accent={COLORS.brand600} onPress={testVoice} />
           <View style={S.divider} />
           <ActionRow icon="notifications" label="Immediate Test Alert" description="Trigger local notification now" accent={COLORS.amber600} onPress={testImmediateNotification} />
@@ -344,12 +346,50 @@ export default function ProfileScreen() {
         {/* About */}
         <Text style={[S.sectionTitle, { marginTop: SPACING.md }]}>About MediSync</Text>
         <View style={S.card}>
-          {[{ label: 'Version', value: '3.0.0' }, { label: 'AI Engine', value: 'Groq LLaMA 3.3' }, { label: 'Vision', value: 'Google Gemini' }].map(row => (
-            <View key={row.label} style={[S.rowBetween, { paddingVertical: 8 }]}>
-              <Text style={{ fontSize: FONTS.base, color: COLORS.slate500 }}>{row.label}</Text>
-              <Text style={{ fontSize: FONTS.base, fontWeight: FONTS.semibold, color: COLORS.slate800 }}>{row.value}</Text>
+          <TouchableOpacity
+            style={styles.actionRow}
+            onPress={() => Alert.alert('Email Support', 'support@medisync.health')}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.iconCircle, { backgroundColor: '#EFF6FF' }]}>
+              <Ionicons name="mail-outline" size={18} color="#3B82F6" />
             </View>
-          ))}
+            <View style={{ flex: 1 }}>
+              <Text style={styles.actionLabel}>Email Support</Text>
+              <Text style={styles.actionDesc}>support@medisync.health</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={COLORS.slate300} />
+          </TouchableOpacity>
+          <View style={S.divider} />
+          <TouchableOpacity
+            style={styles.actionRow}
+            onPress={() => Alert.alert('Helpline', '+91 800-MEDISYNC\nAvailable 9 AM – 9 PM')}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.iconCircle, { backgroundColor: '#F0FDF4' }]}>
+              <Ionicons name="call-outline" size={18} color="#16A34A" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.actionLabel}>Helpline</Text>
+              <Text style={styles.actionDesc}>Available 9 AM – 9 PM</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={COLORS.slate300} />
+          </TouchableOpacity>
+          <View style={S.divider} />
+          <TouchableOpacity
+            style={styles.actionRow}
+            onPress={() => navigation.navigate('PrivacyPolicy')}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.iconCircle, { backgroundColor: '#FFF7ED' }]}>
+              <Ionicons name="document-text-outline" size={18} color="#EA580C" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.actionLabel}>Privacy Policy</Text>
+              <Text style={styles.actionDesc}>Terms & data usage</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={COLORS.slate300} />
+          </TouchableOpacity>
         </View>
 
         {/* Logout */}

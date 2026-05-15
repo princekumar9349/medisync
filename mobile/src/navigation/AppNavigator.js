@@ -40,11 +40,15 @@ import DataPrivacySettingsScreen    from '../screens/patient/DataPrivacySettings
 import PrivacyPolicyScreen          from '../screens/patient/PrivacyPolicyScreen';
 import EmergencyScreen              from '../screens/patient/EmergencyScreen';
 
+// Admin / Demo Screens
+import DemoScenarioScreen           from '../screens/admin/DemoScenarioScreen';
+
 // Doctor screens
 import DoctorDashboardScreen     from '../screens/doctor/DoctorDashboardScreen';
 import DoctorInboxScreen         from '../screens/doctor/DoctorInboxScreen';
 import DoctorPatientsScreen      from '../screens/doctor/DoctorPatientsScreen';
 import DoctorAlertsScreen        from '../screens/doctor/DoctorAlertsScreen';
+import DoctorNotificationsScreen from '../screens/doctor/DoctorNotificationsScreen';
 import DoctorPatientDetailScreen from '../screens/doctor/DoctorPatientDetailScreen';
 import DoctorSearchScreen        from '../screens/doctor/DoctorSearchScreen';
 import DoctorProfileScreen       from '../screens/doctor/DoctorProfileScreen';
@@ -185,7 +189,7 @@ function DoctorTabs() {
       <Tab.Screen name="Dashboard" component={DoctorDashboardScreen} options={{ tabBarLabel: 'Dashboard' }} />
       <Tab.Screen name="Patients"  component={DoctorPatientsStack}   options={{ tabBarLabel: 'Patients' }} />
       <Tab.Screen name="Inbox"     component={DoctorInboxScreen}     options={{ tabBarLabel: 'Inbox' }} />
-      <Tab.Screen name="Alerts"    component={DoctorAlertsScreen}    options={{ tabBarLabel: 'Alerts' }} />
+      <Tab.Screen name="Alerts"    component={DoctorNotificationsScreen} options={{ tabBarLabel: 'Alerts' }} />
     </Tab.Navigator>
   );
 }
@@ -235,6 +239,8 @@ function PatientStackNav() {
       <Stack.Screen name="DoctorPatientChat"     component={ChatScreen} />
       {/* 🆘 Emergency instant doctor chat */}
       <Stack.Screen name="Emergency"             component={EmergencyScreen} options={{ presentation: 'modal' }} />
+      {/* 🛠️ Demo Tools */}
+      <Stack.Screen name="DemoScenario"          component={DemoScenarioScreen} />
     </Stack.Navigator>
   );
 }

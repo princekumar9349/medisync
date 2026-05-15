@@ -14,9 +14,11 @@ import { Ionicons } from '@expo/vector-icons';
 import AppHeader, { AppHeaderBtn } from '../../components/AppHeader';
 import EmptyState from '../../components/EmptyState';
 import { PillboxSkeleton } from '../../components/SkeletonLoader';
-import { apiGetPillboxSlots, apiMarkDoseTaken, apiMarkDoseSkipped } from '../../services/api';
+import { apiGetPillboxSlots, apiMarkDoseTaken, apiMarkDoseSkipped, apiGetDeviceSchedule } from '../../services/api';
 import { enqueueSyncAction } from '../../sync/queue';
 import NotificationService from '../../services/NotificationService';
+import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../components/Toast';
 import { COLORS, FONTS, SPACING, RADIUS, S, SHADOW, TOUCH } from '../../theme';
 
 
@@ -58,16 +60,22 @@ function CriticalBadge() {
 
 // ─── MedRow ───────────────────────────────────────────────────────────────────
 function MedRow({ med, voiceOn, language, onStatusChange }) {
-  const [status, setStatus]   = useState(med.status || 'pending');
+  const toast = useToast();
+  // ✅ Fix: Use prop status as source of truth (controlled by parent), with local override for instant feedback
+  const [localStatus, setLocalStatus] = useState(null);
+  const status = localStatus ?? (med.status || 'pending');
   const [loading, setLoading] = useState(false);
   const cfg = STATE_CFG[status] || STATE_CFG.pending;
 
+  // Reset local override when parent prop changes (e.g. after refresh)
+  useEffect(() => { setLocalStatus(null); }, [med.status]);
+
   async function act(newStatus) {
     if (loading) return;
-    
-    // 1. Optimistic UI update instantly
-    setStatus(newStatus);
-    onStatusChange?.(newStatus);
+
+    // 1. Instant optimistic update — both local UI and parent state
+    setLocalStatus(newStatus);
+    onStatusChange?.(med.med_id, newStatus); // ✅ Fix: pass med_id so parent can update slots
 
     if (voiceOn) {
       const msg = language === 'HI'
@@ -80,19 +88,28 @@ function MedRow({ med, voiceOn, language, onStatusChange }) {
     const timestamp = new Date().toISOString();
     try {
       if (newStatus === 'taken') {
-        await apiMarkDoseTaken(med.med_id, '', timestamp);
+        await apiMarkDoseTaken(med.med_id, med.timing, timestamp);
       } else {
-        await apiMarkDoseSkipped(med.med_id, '', timestamp);
+        await apiMarkDoseSkipped(med.med_id, med.timing, timestamp);
       }
     } catch (e) {
-      console.warn('[Pillbox] Network fail, queuing offline action:', e.message);
-      await enqueueSyncAction({
-        operation_type: newStatus === 'taken' ? 'MARK_TAKEN' : 'MARK_SKIPPED',
-        priority: 1, // High priority adherence log
-        payload: { medicine_id: med.med_id, slot: '', timestamp },
-        dedupe_key: `${newStatus}_${med.med_id}`
-      });
-      DeviceEventEmitter.emit('sync_queue_updated', true);
+      const msg = e.message || String(e);
+      // If the backend actively rejected the request (e.g. 400 window expired), rollback instead of queuing
+      if (msg.includes('Cannot mark') || msg.includes('expired') || msg.includes('recorded as')) {
+        console.warn('[Pillbox] Server rejected dose action:', msg);
+        setLocalStatus(null);
+        onStatusChange?.(med.med_id, med.status); // revert parent state back to original
+        toast?.showToast(msg, 'error');
+      } else {
+        console.warn('[Pillbox] Network fail, queuing offline action:', msg);
+        await enqueueSyncAction({
+          operation_type: newStatus === 'taken' ? 'MARK_TAKEN' : 'MARK_SKIPPED',
+          priority: 1,
+          payload: { medicine_id: med.med_id, slot: med.timing, timestamp },
+          dedupe_key: `${newStatus}_${med.med_id}`
+        });
+        DeviceEventEmitter.emit('sync_queue_updated', true);
+      }
     }
   }
 
@@ -232,11 +249,14 @@ function MissedAccordion({ meds, voiceOn, language }) {
 }
 
 // ─── SlotSection ──────────────────────────────────────────────────────────────
-function SlotSection({ slotKey, meds, voiceOn, language }) {
+// ✅ Fix: Accept onStatusChange from parent and forward to MedRow
+function SlotSection({ slotKey, meds, voiceOn, language, onStatusChange }) {
   const [open, setOpen] = useState(true);
-  const cfg   = SLOT_CFG[slotKey];
-  const taken = meds.filter(m => m.status === 'taken').length;
-  const pct   = meds.length > 0 ? Math.round((taken / meds.length) * 100) : 0;
+  const cfg = SLOT_CFG[slotKey];
+
+  // ✅ Fix: Count taken from live meds prop (parent updates it)
+  const takenCount = meds.filter(m => m.status === 'taken').length;
+  const pct = meds.length > 0 ? Math.round((takenCount / meds.length) * 100) : 0;
 
   return (
     <View style={[styles.slotCard, { borderColor: cfg.border }]}>
@@ -249,7 +269,9 @@ function SlotSection({ slotKey, meds, voiceOn, language }) {
           </View>
         </View>
         <View style={S.row}>
-          <View style={styles.slotProgress}><Text style={styles.slotCount}>{taken}/{meds.length}</Text></View>
+          <View style={styles.slotProgress}>
+            <Text style={styles.slotCount}>{takenCount}/{meds.length}</Text>
+          </View>
           <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={COLORS.slate400} style={{ marginLeft: 6 }} />
         </View>
       </TouchableOpacity>
@@ -266,7 +288,13 @@ function SlotSection({ slotKey, meds, voiceOn, language }) {
               <Text style={styles.emptySlotText}>No medicines this slot</Text>
             </View>
           ) : meds.map((med, i) => (
-            <MedRow key={`${med.med_id}-${i}`} med={med} voiceOn={voiceOn} language={language} />
+            <MedRow
+              key={`${med.med_id}-${i}`}
+              med={med}
+              voiceOn={voiceOn}
+              language={language}
+              onStatusChange={onStatusChange} // ✅ Fix: forward to MedRow
+            />
           ))}
         </View>
       )}
@@ -294,10 +322,55 @@ function SummaryStrip({ summary }) {
   );
 }
 
+// ─── IoT Device Status Badge ────────────────────────────────────────────────
+function IoTStatusBadge({ status, lastSync }) {
+  const pulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (status === 'connected') {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulse, { toValue: 1.4, duration: 900, useNativeDriver: true }),
+          Animated.timing(pulse, { toValue: 1.0, duration: 900, useNativeDriver: true }),
+        ])
+      ).start();
+    } else {
+      pulse.setValue(1);
+    }
+  }, [status]);
+
+  const isConnected = status === 'connected';
+  const dotColor = isConnected ? '#10B981' : status === 'syncing' ? '#F59E0B' : '#94A3B8';
+
+  return (
+    <View style={iotS.badge}>
+      <View style={{ alignItems: 'center', justifyContent: 'center', width: 14, height: 14 }}>
+        <Animated.View style={[iotS.pulseRing, { borderColor: dotColor, transform: [{ scale: pulse }] }]} />
+        <View style={[iotS.dot, { backgroundColor: dotColor }]} />
+      </View>
+      <Ionicons name="hardware-chip-outline" size={13} color={isConnected ? '#10B981' : '#94A3B8'} />
+      <Text style={[iotS.label, { color: isConnected ? '#065F46' : '#64748B' }]}>
+        {status === 'connected' ? 'IoT Online' : status === 'syncing' ? 'Syncing…' : 'IoT Offline'}
+      </Text>
+      {lastSync && isConnected && (
+        <Text style={iotS.time}>{lastSync}</Text>
+      )}
+    </View>
+  );
+}
+
+const iotS = StyleSheet.create({
+  badge:     { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#A7F3D0', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
+  pulseRing: { position: 'absolute', width: 14, height: 14, borderRadius: 7, borderWidth: 1.5 },
+  dot:       { width: 7, height: 7, borderRadius: 4 },
+  label:     { fontSize: 11, fontWeight: '700' },
+  time:      { fontSize: 10, color: '#6EE7B7', fontWeight: '600' },
+});
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function PillboxScreen({ route, navigation }) {
   const voiceOn  = route?.params?.voiceOn  ?? false;
   const language = route?.params?.language ?? 'EN';
+  const { user } = useAuth(); // ✅ IoT: need patient_id
   const [slots,        setSlots]        = useState({ morning: [], afternoon: [], night: [] });
   const [summary,      setSummary]      = useState({});
   const [alertMessage, setAlertMessage] = useState(null);
@@ -309,6 +382,41 @@ export default function PillboxScreen({ route, navigation }) {
   const [filter,       setFilter]       = useState('all');
   const [search,       setSearch]       = useState('');
   const [syncPending,  setSyncPending]  = useState(false);
+
+  // ✅ IoT: device connection state
+  const [iotStatus,    setIotStatus]    = useState('offline'); // 'connected' | 'syncing' | 'offline'
+  const [iotLastSync,  setIotLastSync]  = useState(null);
+  const iotPollRef = useRef(null);
+  const slotsRef = useRef(slots); // keep ref for IoT comparison
+  useEffect(() => { slotsRef.current = slots; }, [slots]);
+
+  // ✅ Fix: Update parent slots state when a dose is marked taken/skipped
+  // This ensures filter tabs (Taken, Missed) and SlotSection progress bar update instantly
+  const handleStatusChange = useCallback((medId, newStatus) => {
+    setSlots(prev => {
+      const updated = {};
+      for (const slot of ['morning', 'afternoon', 'night']) {
+        updated[slot] = (prev[slot] || []).map(m =>
+          m.med_id === medId ? { ...m, status: newStatus } : m
+        );
+      }
+      return updated;
+    });
+    // Also update summary counts instantly
+    setSummary(prev => {
+      const oldStatus = (() => {
+        for (const slot of ['morning', 'afternoon', 'night']) {
+          const found = (slots[slot] || []).find(m => m.med_id === medId);
+          if (found) return found.status;
+        }
+        return null;
+      })();
+      const s = { ...prev };
+      if (oldStatus && s[oldStatus] > 0) s[oldStatus] = (s[oldStatus] || 1) - 1;
+      s[newStatus] = (s[newStatus] || 0) + 1;
+      return s;
+    });
+  }, [slots]);
 
   // Focus effect to reload data + check notif state
   useFocusEffect(
@@ -396,6 +504,35 @@ export default function PillboxScreen({ route, navigation }) {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [loadSlots]);
 
+  // ✅ IoT: Poll ESP8266 device schedule every 30s — detects hardware-triggered taken events
+  const pollIoTDevice = useCallback(async () => {
+    const patientId = user?.patient_id;
+    if (!patientId) return;
+    try {
+      setIotStatus('syncing');
+      const data = await apiGetDeviceSchedule(patientId);
+      setIotStatus('connected');
+      setIotLastSync(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }));
+      // If IoT says 'taken' but we show otherwise → refresh from server
+      let needsRefresh = false;
+      for (const med of (data.medicines || [])) {
+        if (med.status === 'taken') {
+          const medId = (med.name || '').replace(/ /g, '_').toLowerCase();
+          const slotMeds = (slotsRef.current[med.slot] || []);
+          const local = slotMeds.find(m => m.med_id === medId);
+          if (local && local.status !== 'taken') { needsRefresh = true; break; }
+        }
+      }
+      if (needsRefresh) loadSlots(true);
+    } catch { setIotStatus('offline'); }
+  }, [user?.patient_id, loadSlots]);
+
+  useEffect(() => {
+    pollIoTDevice();
+    iotPollRef.current = setInterval(pollIoTDevice, 30000);
+    return () => { if (iotPollRef.current) clearInterval(iotPollRef.current); };
+  }, [pollIoTDevice]);
+
   const totalMeds = (slots.morning?.length || 0) + (slots.afternoon?.length || 0) + (slots.night?.length || 0);
 
   return (
@@ -405,7 +542,12 @@ export default function PillboxScreen({ route, navigation }) {
       <AppHeader
         title="Pillbox"
         subtitle={new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-        right={<AppHeaderBtn icon="add" onPress={() => navigation.navigate('Scan')} accessibilityLabel="Add prescription" />}
+        right={
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <IoTStatusBadge status={iotStatus} lastSync={iotLastSync} />
+            <AppHeaderBtn icon="add" onPress={() => navigation.navigate('Scan')} accessibilityLabel="Add prescription" />
+          </View>
+        }
       />
 
       {notifWarning && (
@@ -506,7 +648,16 @@ export default function PillboxScreen({ route, navigation }) {
                   ? (filteredSlots[slot] || []).filter(m => m.status !== 'missed')
                   : (filteredSlots[slot] || []);
                 if (meds.length === 0 && filter !== 'all') return null;
-                return <SlotSection key={slot} slotKey={slot} meds={meds} voiceOn={voiceOn} language={language} />;
+                return (
+                  <SlotSection
+                    key={slot}
+                    slotKey={slot}
+                    meds={meds}
+                    voiceOn={voiceOn}
+                    language={language}
+                    onStatusChange={handleStatusChange} // ✅ Fix: pass callback
+                  />
+                );
               })}
             </>
           )}

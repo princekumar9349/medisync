@@ -59,23 +59,29 @@ function PremiumInput({ icon, placeholder, value, onChangeText, secureTextEntry,
 
 // ─── Password Strength ────────────────────────────────────────────────────────
 function PasswordStrength({ password }) {
-  let strength = 0;
-  if (password.length >= 6)  strength++;
-  if (password.length >= 10) strength++;
-  if (/[A-Z]/.test(password)) strength++;
-  if (/[0-9]/.test(password)) strength++;
-  if (/[^A-Za-z0-9]/.test(password)) strength++;
-  const labels = ['', 'Weak', 'Fair', 'Good', 'Strong', 'Excellent'];
-  const colors  = ['', '#EF4444', '#F59E0B', '#3B82F6', '#10B981', '#059669'];
   if (!password) return null;
+  const checks = [
+    { label: '8+ characters',          ok: password.length >= 8 },
+    { label: 'Uppercase letter (A-Z)',  ok: /[A-Z]/.test(password) },
+    { label: 'Number (0-9)',            ok: /[0-9]/.test(password) },
+    { label: 'Special char (@#!$...)',  ok: /[^A-Za-z0-9]/.test(password) },
+  ];
+  const passed = checks.filter(c => c.ok).length;
+  const barColors = ['#EF4444', '#F59E0B', '#3B82F6', '#10B981'];
+  const barColor = barColors[passed - 1] || '#EF4444';
   return (
-    <View style={{ marginBottom: 14, marginTop: -6 }}>
-      <View style={{ flexDirection: 'row', gap: 4 }}>
-        {[1,2,3,4,5].map(i => (
-          <View key={i} style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: i <= strength ? colors[strength] : COLORS.slate200 }} />
+    <View style={{ marginBottom: 14, marginTop: -4 }}>
+      <View style={{ flexDirection: 'row', gap: 4, marginBottom: 8 }}>
+        {[0,1,2,3].map(i => (
+          <View key={i} style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: i < passed ? barColor : COLORS.slate200 }} />
         ))}
       </View>
-      <Text style={{ fontSize: 11, color: colors[strength], fontWeight: '700', marginTop: 4 }}>{labels[strength]}</Text>
+      {checks.map((c, i) => (
+        <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+          <Ionicons name={c.ok ? 'checkmark-circle' : 'ellipse-outline'} size={13} color={c.ok ? '#10B981' : COLORS.slate300} />
+          <Text style={{ fontSize: 11, color: c.ok ? '#10B981' : COLORS.slate400, fontWeight: c.ok ? '700' : '500' }}>{c.label}</Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -139,8 +145,17 @@ export default function RegisterScreen({ navigation }) {
     if (!name.trim() || !email.trim() || !password) {
       setError('Name, email, and password are required.'); return;
     }
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters.'); return;
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.'); return;
+    }
+    if (!/[A-Z]/.test(password)) {
+      setError('Password must contain at least one uppercase letter (e.g. A, B, C…)'); return;
+    }
+    if (!/[0-9]/.test(password)) {
+      setError('Password must contain at least one number (e.g. 1, 2, 3…)'); return;
+    }
+    if (!/[^A-Za-z0-9]/.test(password)) {
+      setError('Password must contain at least one special character (e.g. @, #, !, \$…)'); return;
     }
     setLoading(true); setError(null);
     try {
@@ -240,7 +255,7 @@ export default function RegisterScreen({ navigation }) {
                   {/* Required fields */}
                   <PremiumInput icon="person-outline"      placeholder="Full Name"              value={name}     onChangeText={setName}     autoCapitalize="words"         accent={role.accent} />
                   <PremiumInput icon="mail-outline"        placeholder="Email Address"           value={email}    onChangeText={setEmail}    keyboardType="email-address"   accent={role.accent} autoCorrect={false} />
-                  <PremiumInput icon="lock-closed-outline" placeholder="Password (min 6 chars)"  value={password} onChangeText={setPassword} secureTextEntry showToggle toggleState={showPw} onToggle={() => setShowPw(!showPw)} accent={role.accent} />
+                  <PremiumInput icon="lock-closed-outline" placeholder="Password (min 8, A-Z, 0-9, @#!)"  value={password} onChangeText={setPassword} secureTextEntry showToggle toggleState={showPw} onToggle={() => setShowPw(!showPw)} accent={role.accent} />
                   <PasswordStrength password={password} />
 
                   {/* Doctor specialization */}

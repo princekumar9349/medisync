@@ -321,46 +321,123 @@ export async function apiGetInsights() {
 
 // ─── Scan ──────────────────────────────────────────────────────────────────────
 
-export async function apiScan(imageUris) {
-  // Supports single string or array of strings
-  const uris = Array.isArray(imageUris) ? imageUris : [imageUris];
-  
+/**
+ * apiStartScan — Submit image to the async OCR pipeline.
+ * Backend: POST /scan (multipart/form-data, field name: "files")
+ * Returns: { job_id: string, status: "PENDING"|"PROCESSING" }
+ */
+export async function apiStartScan(imageUri) {
+  const uri = Array.isArray(imageUri) ? imageUri[0] : imageUri;
+
   const token = await getToken();
   const headers = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
   const formData = new FormData();
-  
-  for (let i = 0; i < uris.length; i++) {
-    const uri = uris[i];
-    if (Platform.OS === 'web') {
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      formData.append('files', blob, `prescription_${i}.jpg`);
-    } else {
-      formData.append('files', {
-        uri: uri,
-        type: 'image/jpeg',
-        name: `prescription_${i}.jpg`,
-      });
+
+  if (Platform.OS === 'web') {
+    const blobRes  = await fetch(uri);
+    const blob     = await blobRes.blob();
+    formData.append('files', blob, 'prescription.jpg'); // ✅ backend List[UploadFile]
+  } else {
+    formData.append('files', {                           // ✅ backend List[UploadFile]
+      uri,
+      type: 'image/jpeg',
+      name: 'prescription.jpg',
+    });
+  }
+
+  console.log('[apiStartScan] Submitting to', `${API_BASE}/scan`);
+
+  const controller = new AbortController();
+  const uploadTimer = setTimeout(() => controller.abort(), 45000);
+
+  try {
+    const res = await fetch(`${API_BASE}/scan`, {
+      method: 'POST',
+      headers,
+      body:   formData,
+      signal: controller.signal,
+    });
+    clearTimeout(uploadTimer);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      console.error('[apiStartScan] HTTP error:', res.status, err);
+      throw new Error(err.detail || `Scan upload failed (${res.status})`);
     }
+
+    const data = await res.json();
+    console.log('[apiStartScan] OCR JOB:', JSON.stringify(data));
+    return data; // { job_id, status }
+
+  } catch (error) {
+    clearTimeout(uploadTimer);
+    if (error.name === 'AbortError') {
+      throw new Error('Upload timed out. Please check your connection and try again.');
+    }
+    throw error;
   }
-
-  const res = await fetch(`${API_BASE}/scan`, {
-    method: 'POST',
-    headers,
-    body: formData,
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `Scan enqueue failed (${res.status})`);
-  }
-
-  return res.json(); // returns { job_id, status }
 }
 
-export async function apiPollScanStatus(job_id) {
+/** Backward-compatible alias — kept so existing imports don't break */
+export const apiScan = apiStartScan;
+
+/**
+ * apiPollScan — Single status check for an OCR job.
+ * Returns raw backend response: { status, extraction?, error? }
+ */
+export async function apiPollScan(jobId) {
+  const data = await apiFetch(`/scan/status/${jobId}`);
+  console.log('[apiPollScan] OCR STATUS:', JSON.stringify(data));
+  return data;
+}
+
+/** Backward-compatible alias */
+export const apiPollScanStatus = apiPollScan;
+
+/**
+ * apiPollWithTimeout — Poll until COMPLETED/FAILED or timeout.
+ *
+ * @param {string}   jobId
+ * @param {number}   timeout   — ms, default 60000
+ * @param {function} onProgress(attempt, elapsed) — optional progress callback
+ * @returns {object} final COMPLETED response
+ */
+export async function apiPollWithTimeout(jobId, timeout = 60000, onProgress = null) {
+  const startTime   = Date.now();
+  let   attempts    = 0;
+  const BASE_DELAY  = 2000;
+
+  while (true) {
+    attempts++;
+    const elapsed = Date.now() - startTime;
+
+    if (elapsed >= timeout) {
+      throw new Error(`Analysis timed out after ${Math.round(timeout / 1000)}s. Please try again.`);
+    }
+
+    if (onProgress) onProgress(attempts, elapsed);
+
+    const data = await apiPollScan(jobId);
+
+    if (data?.status === 'COMPLETED') {
+      console.log('[apiPollWithTimeout] Completed after', attempts, 'attempts,', Math.round(elapsed / 1000), 's');
+      return data;
+    }
+
+    if (data?.status === 'FAILED') {
+      throw new Error(data?.error || 'Prescription analysis failed on server.');
+    }
+
+    // Still PENDING/PROCESSING — exponential backoff capped at 5s
+    const delay = Math.min(BASE_DELAY * Math.pow(1.15, Math.min(attempts, 8)), 5000);
+    await new Promise(r => setTimeout(r, delay));
+  }
+}
+
+/** Legacy poll alias — kept for OCRReviewScreen backward compat */
+export async function apiPollScanStatus_legacy(job_id) {
   return apiFetch(`/scan/status/${job_id}`);
 }
 
@@ -388,6 +465,36 @@ export async function apiReportSymptom(symptom, severity, time_context = null) {
 
 export async function apiGetPillboxSlots() {
   return apiFetch('/pillbox');
+}
+
+// ─── IoT / ESP8266 Device ──────────────────────────────────────────────────────
+// These endpoints use device API key, NOT JWT — hardware-friendly
+const ESP_KEY = 'medisync-esp-2024';
+
+export async function apiDevicePing() {
+  const base = API_BASE.replace('/api', ''); // hit root, not /api
+  const res = await fetch(`${base}/device/ping`);
+  if (!res.ok) throw new Error('Device server unreachable');
+  return res.json();
+}
+
+export async function apiGetDeviceSchedule(patientId) {
+  const base = API_BASE.replace('/api', '');
+  const res = await fetch(
+    `${base}/device/schedule?patient_id=${encodeURIComponent(patientId)}&key=${ESP_KEY}`
+  );
+  if (!res.ok) throw new Error('Failed to fetch device schedule');
+  return res.json();
+}
+
+export async function apiDeviceMarkTaken(patientId, medicineName, slot = 'morning') {
+  const base = API_BASE.replace('/api', '');
+  const res = await fetch(
+    `${base}/device/confirm-taken?patient_id=${encodeURIComponent(patientId)}&medicine_name=${encodeURIComponent(medicineName)}&slot=${slot}&key=${ESP_KEY}`,
+    { method: 'POST' }
+  );
+  if (!res.ok) throw new Error('Failed to mark medicine as taken via IoT');
+  return res.json();
 }
 
 // ─── Chat ──────────────────────────────────────────────────────────────────────
@@ -714,7 +821,7 @@ export async function apiUpdateNotificationPreferences(prefs) {
 
 /** Mark a dose as taken (quick action from notification) */
 export async function apiMarkDoseTaken(med_id, slot = '', authoritative_time = null) {
-  return apiFetch('/tracking/mark-done', {
+  return apiFetch('/mark-done', {
     method: 'POST',
     body: JSON.stringify({ med_id, slot, status: 'taken', authoritative_time }),
   });
@@ -722,7 +829,7 @@ export async function apiMarkDoseTaken(med_id, slot = '', authoritative_time = n
 
 /** Mark a dose as skipped (quick action from notification) */
 export async function apiMarkDoseSkipped(med_id, slot = '', authoritative_time = null) {
-  return apiFetch('/tracking/mark-done', {
+  return apiFetch('/mark-done', {
     method: 'POST',
     body: JSON.stringify({ med_id, slot, status: 'skipped', authoritative_time }),
   });
