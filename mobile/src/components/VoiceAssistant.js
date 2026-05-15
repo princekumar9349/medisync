@@ -108,7 +108,7 @@ export default function VoiceAssistant({ navigationRef }) {
 
   async function getToken() {
     try { return await AsyncStorage.getItem('medisync_token'); }
-    catch { return null; }
+    catch (_e) { return null; }
   }
 
   // ── onPressIn — START RECORDING IMMEDIATELY ──────────────────────────────────
@@ -173,7 +173,7 @@ export default function VoiceAssistant({ navigationRef }) {
 
     // Must hold for at least 700ms
     if (elapsed < 700) {
-      try { await rec.stopAndUnloadAsync(); } catch {}
+      try { await rec.stopAndUnloadAsync(); } catch (_e) { /* ignore */ }
       setStatus('idle');
       setAiResponse('Thoda aur der boliye... (button hold karein)');
       return;
@@ -242,43 +242,42 @@ export default function VoiceAssistant({ navigationRef }) {
 
       executeAction(action);
 
-    } catch (e: any) {
-      console.error('[VoiceAI] Process error:', e?.message || e);
+    } catch (e) {
+      console.error('[VoiceAI] Process error:', e && e.message ? e.message : String(e));
       setStatus('error');
-      setAiResponse('Kuch galat hua: ' + (e?.message || 'unknown'));
+      setAiResponse('Kuch galat hua. Dobara try karein.');
     }
   }
 
   // ── Execute action ────────────────────────────────────────────────────────────
   function executeAction(action) {
-    const act = action.action;
-    const nav  = navigationRef?.current;
+    var act = action.action;
+    var nav = navigationRef && navigationRef.current;
 
     if (act === 'navigate_screen' && action.screen && nav) {
-      const screen = SCREEN_MAP[action.screen] || action.screen;
-      try { setTimeout(() => nav.navigate(screen), 800); } catch {}
+      var screen = SCREEN_MAP[action.screen] || action.screen;
+      try { setTimeout(function() { nav.navigate(screen); }, 800); } catch (_e) { /* ignore */ }
       return;
     }
     if (act === 'emergency_alert' || act === 'sos_mode') {
-      try { setTimeout(() => nav?.navigate('Emergency'), 300); } catch {}
+      try { setTimeout(function() { nav && nav.navigate('Emergency'); }, 300); } catch (_e) { /* ignore */ }
       return;
     }
     if (act === 'open_chat' || act === 'send_chat_message') {
       try {
-        setTimeout(() => nav?.navigate('Chat', {
-          prefillMessage: action.payload?.message || '',
-        }), 800);
-      } catch {}
+        var msg = action.payload && action.payload.message ? action.payload.message : '';
+        setTimeout(function() { nav && nav.navigate('Chat', { prefillMessage: msg }); }, 800);
+      } catch (_e) { /* ignore */ }
       return;
     }
     if (act === 'open_slot' && action.slot) {
-      setTimeout(() => Alert.alert('\uD83D\uDD13 Pillbox', `Slot ${action.slot} open kiya ja raha hai!`), 500);
+      setTimeout(function() { Alert.alert('Pillbox', 'Slot ' + action.slot + ' open kiya ja raha hai!'); }, 500);
     }
   }
 
   // ── Render ────────────────────────────────────────────────────────────────────
-  const statusInfo  = STATUS_CFG[status as keyof typeof STATUS_CFG] || STATUS_CFG.idle;
-  const isRecording = status === 'recording';
+  var statusInfo  = STATUS_CFG[status] || STATUS_CFG.idle;
+  var isRecording = status === 'recording';
 
   return (
     <>
