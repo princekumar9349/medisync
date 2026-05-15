@@ -1,0 +1,6 @@
+groq
+SpeechRecognition
+pyaudio
+edge-tts
+requests
+playsound==1.2.2
