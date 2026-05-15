@@ -14,18 +14,13 @@ import { Platform } from 'react-native';
 
 // ─── Config ────────────────────────────────────────────────────────────────────
 const ENV = process.env.EXPO_PUBLIC_ENV || (__DEV__ ? 'DEV' : 'PROD');
-const LOCAL_WIFI_IP = '192.168.1.13'; // fallback for iOS/web
+const LOCAL_WIFI_IP = '10.234.78.74'; // fallback for iOS/web
 
 const getApiBase = () => {
   if (process.env.EXPO_PUBLIC_API_URL) return process.env.EXPO_PUBLIC_API_URL;
   if (ENV === 'PROD') return 'https://medisync-backend-520988526649.asia-south1.run.app';
   if (ENV === 'STAGING') return 'https://medisync-staging.run.app';
-  if (Platform.OS === 'android') {
-    // Always use localhost for Android DEV — works via `adb reverse tcp:8000 tcp:8000`
-    // This forwards phone's localhost:8000 → PC's port 8000 (works for real device + emulator)
-    return 'http://localhost:8000';
-  }
-  return `http://${LOCAL_WIFI_IP}:8000`; // iOS / web fallback
+  return `http://${LOCAL_WIFI_IP}:8000`;
 };
 
 export const API_BASE = getApiBase();
