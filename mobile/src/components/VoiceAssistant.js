@@ -63,7 +63,13 @@ export default function VoiceAssistant({ navigationRef }) {
   // Animations
   const pulseAnim  = useRef(new Animated.Value(1)).current;
   const pulseAnim2 = useRef(new Animated.Value(1)).current;
-  const waveAnims  = Array.from({ length: 5 }, () => useRef(new Animated.Value(0.3)).current);
+  // Stable wave refs — must not be created inside .map()
+  const waveAnim0  = useRef(new Animated.Value(0.3)).current;
+  const waveAnim1  = useRef(new Animated.Value(0.3)).current;
+  const waveAnim2  = useRef(new Animated.Value(0.3)).current;
+  const waveAnim3  = useRef(new Animated.Value(0.3)).current;
+  const waveAnim4  = useRef(new Animated.Value(0.3)).current;
+  const waveAnims  = [waveAnim0, waveAnim1, waveAnim2, waveAnim3, waveAnim4];
 
   const startPulse = useCallback(() => {
     Animated.loop(Animated.sequence([
@@ -198,7 +204,7 @@ export default function VoiceAssistant({ navigationRef }) {
 
       // Send to backend
       const form = new FormData();
-      form.append('audio', { uri, name: 'voice.m4a', type: 'audio/m4a' } as any);
+      form.append('audio', { uri, name: 'voice.m4a', type: 'audio/m4a' });
 
       const resp = await fetch(`${API_BASE}/voice-ai/process`, {
         method:  'POST',
@@ -244,29 +250,29 @@ export default function VoiceAssistant({ navigationRef }) {
   }
 
   // ── Execute action ────────────────────────────────────────────────────────────
-  function executeAction(action: any) {
+  function executeAction(action) {
     const act = action.action;
     const nav  = navigationRef?.current;
 
     if (act === 'navigate_screen' && action.screen && nav) {
-      const screen = SCREEN_MAP[action.screen as keyof typeof SCREEN_MAP] || action.screen;
-      try { setTimeout(() => (nav as any).navigate(screen), 800); } catch {}
+      const screen = SCREEN_MAP[action.screen] || action.screen;
+      try { setTimeout(() => nav.navigate(screen), 800); } catch {}
       return;
     }
     if (act === 'emergency_alert' || act === 'sos_mode') {
-      try { setTimeout(() => (nav as any)?.navigate('Emergency'), 300); } catch {}
+      try { setTimeout(() => nav?.navigate('Emergency'), 300); } catch {}
       return;
     }
     if (act === 'open_chat' || act === 'send_chat_message') {
       try {
-        setTimeout(() => (nav as any)?.navigate('Chat', {
+        setTimeout(() => nav?.navigate('Chat', {
           prefillMessage: action.payload?.message || '',
         }), 800);
       } catch {}
       return;
     }
     if (act === 'open_slot' && action.slot) {
-      setTimeout(() => Alert.alert('🔓 Pillbox', `Slot ${action.slot} open kiya ja raha hai!`), 500);
+      setTimeout(() => Alert.alert('\uD83D\uDD13 Pillbox', `Slot ${action.slot} open kiya ja raha hai!`), 500);
     }
   }
 
