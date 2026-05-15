@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timezone
 from db import database
-from backend.api.tracking import _get_today_log, _compute_dose_state
+from api.tracking import _get_today_log, _compute_dose_state
 
 logger = logging.getLogger("Medisync.VoiceAI.Adherence")
 
@@ -51,7 +51,7 @@ def process_voice_adherence(user_id: str, med_id: str, medicine_name: str, statu
         
         # Invalidate analytics snapshot
         try:
-            from backend.analytics.snapshots.manager import invalidate_user_snapshot
+            from analytics.snapshots.manager import invalidate_user_snapshot
             invalidate_user_snapshot(user_id, reason="voice_dose_logged")
         except Exception:
             pass
