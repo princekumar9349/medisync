@@ -16,52 +16,21 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from db import database
-from models.schemas import MarkDoneRequest, TokenData, SymptomCreate
+from core.schemas.adherence import MarkDoneRequest, SymptomCreate
+from models.schemas import TokenData
 from services.auth_service import get_current_user, require_patient
+
+from adherence.state_machine import compute_slot_state, AdherenceState, _ist_now, _ist_today_ts, SLOT_WINDOWS
+from adherence.slot_resolver import resolve_target_slots
+from adherence.dedupe import check_idempotency
 
 logger = logging.getLogger("Medisync.Tracking")
 router = APIRouter(tags=["Medication Tracking"])
 
-# ─── IST timezone ─────────────────────────────────────────────────────────────
-IST = timezone(timedelta(hours=5, minutes=30))
-
-# ─── Slot Window Definitions (IST hours, minutes) ────────────────────────────
-# Each slot: (active_open, late_open, missed_after) — all in IST local time
-SLOT_WINDOWS = {
-    "morning":   {"open": (7, 0),  "late": (9, 0),  "close": (11, 0),  "label": "07:00", "late_label": "09:00", "close_label": "11:00"},
-    "afternoon": {"open": (12, 0), "late": (14, 0), "close": (16, 0),  "label": "12:00", "late_label": "14:00", "close_label": "16:00"},
-    "night":     {"open": (20, 0), "late": (22, 0), "close": (23, 30), "label": "20:00", "late_label": "22:00", "close_label": "23:30"},
-}
-
-
-def _ist_now() -> datetime:
-    """Return current datetime in IST."""
-    return datetime.now(IST)
-
-
-def _ist_today_ts(hour: int, minute: int) -> datetime:
-    """Return today's IST datetime at the given hour:minute."""
-    now_ist = _ist_now()
-    return now_ist.replace(hour=hour, minute=minute, second=0, microsecond=0)
-
-
 def _compute_dose_state(slot_key: str, log_status: Optional[str]) -> dict:
     """
-    Returns dose state dict for a given slot based on current IST time and
-    any existing log entry for today.
+    Adapter bridging old tracking format to new state machine.
     """
-    now_ist = _ist_now()
-    w = SLOT_WINDOWS[slot_key]
-
-    t_open  = _ist_today_ts(*w["open"])
-    t_late  = _ist_today_ts(*w["late"])
-    t_close = _ist_today_ts(*w["close"])
-
-    # Handle night close at 23:30 — must not be mistaken for tomorrow
-    if slot_key == "night" and w["close"] == (23, 30):
-        t_close = _ist_today_ts(23, 30)
-
-    # ── Already logged today ──────────────────────────────────────────────
     if log_status in ("taken", "skipped"):
         return {
             "status": log_status,
@@ -69,23 +38,20 @@ def _compute_dose_state(slot_key: str, log_status: Optional[str]) -> dict:
             "can_skip": False,
         }
 
-    # ── Pending — determine by current time ───────────────────────────────
-    if now_ist < t_open:
-        return {"status": "upcoming", "can_take": False, "can_skip": False}
-    elif t_open <= now_ist < t_late:
-        return {"status": "active",   "can_take": True,  "can_skip": True}
-    elif t_late <= now_ist < t_close:
-        return {"status": "late",     "can_take": True,  "can_skip": True}
-    else:
-        # Window closed — auto-mark as missed (caller will persist)
-        return {"status": "missed",   "can_take": False, "can_skip": False, "auto_missed": True}
-
+    st, can_take = compute_slot_state(slot_key)
+    status_str = st.value
+    
+    return {
+        "status": status_str,
+        "can_take": can_take,
+        "can_skip": can_take,
+        "auto_missed": status_str == "missed"
+    }
 
 def _get_today_log(dose_logs_col, user_id: str, med_id: str, slot: Optional[str] = None) -> Optional[dict]:
     """Fetch most recent dose log for this med_id today (IST midnight → now)."""
     now_ist = _ist_now()
     today_ist_midnight = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
-    # Convert IST midnight to UTC for MongoDB query
     today_utc = today_ist_midnight.astimezone(timezone.utc)
 
     query = {"user_id": user_id, "med_id": med_id, "timestamp": {"$gte": today_utc}}
@@ -96,8 +62,6 @@ def _get_today_log(dose_logs_col, user_id: str, med_id: str, slot: Optional[str]
         query,
         sort=[("timestamp", -1)],
     )
-
-
 def _resolve_target_slots(med: dict) -> list:
     """Determine which slots a medicine belongs to, using priority order."""
     schedule_list = med.get("schedule", [])
@@ -154,7 +118,7 @@ def get_pillbox(current_user: TokenData = Depends(get_current_user)):
             dosage  = med.get("dosage", "")
             is_crit = med.get("is_critical", False)
 
-            for slot_key in _resolve_target_slots(med):
+            for slot_key in resolve_target_slots(med):
                 dedup_key = f"{med_id}::{slot_key}"
                 if dedup_key in seen:
                     continue
@@ -253,18 +217,18 @@ def mark_done(
                     medicine_name = med.get("name", payload.med_id)
                     is_critical   = med.get("is_critical", False)
                     if not slot_key:
-                        slots = _resolve_target_slots(med)
+                        slots = resolve_target_slots(med)
                         if slots:
                             slot_key = slots[0]
                     break
 
     # ── Prevent duplicate logs (idempotency) ─────────────────────────────────
-    existing = _get_today_log(dose_logs_col, current_user.user_id, payload.med_id, slot_key)
-    if existing and existing["status"] in ("taken", "skipped"):
+    dedupe_res = check_idempotency(dose_logs_col, current_user.user_id, payload.med_id, slot_key)
+    if dedupe_res.get("is_duplicate"):
         return {
-            "message": f"Dose already recorded as '{existing['status']}' today.",
-            "med_id":  payload.med_id,
-            "status":  existing["status"],
+            "ok": True,
+            "status": "already_taken",
+            "message": "Dose already confirmed",
             "duplicate": True,
         }
 

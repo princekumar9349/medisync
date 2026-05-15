@@ -26,7 +26,11 @@ class DoseLog(BaseModel):
     scheduled_time: Optional[datetime] = None
     delay_minutes: Optional[int] = 0
     note: Optional[str] = None
-    source: Literal["mobile", "iot", "voice_ai"] = "mobile"
+    source: Literal["mobile", "iot", "voice_ai", "esp_device"] = "mobile"
+    window_state: Optional[str] = None
+    device_id: Optional[str] = None
+    dedupe_key: Optional[str] = None
+    confirmed_via: Optional[str] = None
 
 class DailyLogPoint(BaseModel):
     date: str

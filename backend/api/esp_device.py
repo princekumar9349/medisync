@@ -9,6 +9,11 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, Query
 
 from db import database
+from adherence.state_machine import compute_slot_state, AdherenceState, _ist_now, _today_utc_midnight
+from adherence.slot_resolver import resolve_target_slots, get_current_or_next_slot
+from adherence.dedupe import check_idempotency
+from core.events.bus import EventBus
+from core.events.types import DomainEvent
 
 logger = logging.getLogger("Medisync.ESP")
 router = APIRouter(prefix="/device", tags=["IoT Device"])
@@ -27,38 +32,11 @@ def _check_key(key: str):
             detail="Invalid key. Add ?key=medisync-esp-2024 to URL"
         )
 
-# ─── IST helpers ─────────────────────────────────────────────────────────────
-def _now_ist() -> datetime:
-    return datetime.now(tz=timezone.utc).astimezone(IST)
-
-def _today_utc_midnight() -> datetime:
-    now_ist = _now_ist()
-    ist_midnight = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
-    return ist_midnight.astimezone(timezone.utc)
-
-# ─── Slot config ─────────────────────────────────────────────────────────────
-SLOTS = {
-    "morning":   {"open_h": 7,  "open_m": 0,  "close_h": 11, "close_m": 0,  "display": "08:00"},
-    "afternoon": {"open_h": 12, "open_m": 0,  "close_h": 16, "close_m": 0,  "display": "13:00"},
-    "night":     {"open_h": 20, "open_m": 0,  "close_h": 23, "close_m": 30, "display": "21:00"},
-}
-
-def _slot_status(slot_key: str, now_ist: datetime):
-    w = SLOTS[slot_key]
-    t_open  = now_ist.replace(hour=w["open_h"],  minute=w["open_m"],  second=0, microsecond=0)
-    t_close = now_ist.replace(hour=w["close_h"], minute=w["close_m"], second=0, microsecond=0)
-    if now_ist < t_open:    return "upcoming", False
-    if now_ist <= t_close:  return "active",   True
-    return "missed", False
+# ─── Removed duplicated slot definitions ───
+# We now use the unified adherence engine.
 
 def _resolve_slots(med: dict) -> list:
-    s = med.get("schedule", [])
-    slots = [x for x in s if x in SLOTS]
-    if not slots:
-        if med.get("morning"):   slots.append("morning")
-        if med.get("afternoon"): slots.append("afternoon")
-        if med.get("night"):     slots.append("night")
-    return slots or ["morning"]
+    return resolve_target_slots(med)
 
 def _find_user(users_col, patient_id: str):
     pid = patient_id.strip()
@@ -76,7 +54,7 @@ def device_ping():
     return {
         "status":   "ok",
         "server":   "MediSync",
-        "time_ist": _now_ist().strftime("%H:%M:%S IST"),
+        "time_ist": _ist_now().strftime("%H:%M:%S IST"),
     }
 
 
@@ -124,7 +102,7 @@ def get_device_schedule(
     medicines_raw = rx.get("medicines", []) if rx else []
 
     # ── Time context ──────────────────────────────────────────────────────────
-    now_ist   = _now_ist()
+    now_ist   = _ist_now()
     today_utc = _today_utc_midnight()
 
     # ── Build output ──────────────────────────────────────────────────────────
@@ -152,15 +130,18 @@ def get_device_schedule(
                 if status == "taken":
                     taken_count += 1
             else:
-                status, can_take = _slot_status(slot, now_ist)
+                st, can_take = compute_slot_state(slot, now_ist)
+                status = st.value
                 if status == "missed":
                     missed_today.append(name)
 
+            from adherence.state_machine import SLOT_WINDOWS
+            
             entry = {
                 "name":        name,
                 "dosage":      dosage,
                 "slot":        slot,
-                "time":        SLOTS[slot]["display"],
+                "time":        SLOT_WINDOWS[slot]["display"] if slot in SLOT_WINDOWS else "00:00",
                 "status":      status,
                 "can_take":    can_take,
                 "is_critical": is_crit,
@@ -168,7 +149,7 @@ def get_device_schedule(
             medicines_out.append(entry)
 
             if status == "active":
-                active_now.append({"name": name, "slot": slot, "time": SLOTS[slot]["display"]})
+                active_now.append({"name": name, "slot": slot, "time": SLOT_WINDOWS[slot]["display"] if slot in SLOT_WINDOWS else "00:00"})
 
     # ── Next medicine ─────────────────────────────────────────────────────────
     next_med = None
@@ -199,7 +180,7 @@ def get_device_schedule(
 
 # ─── POST /device/confirm-taken ───────────────────────────────────────────────
 @router.post("/confirm-taken", summary="ESP8266: Mark medicine as taken")
-def device_confirm_taken(
+async def device_confirm_taken(
     patient_id:    str = Query(...),
     medicine_name: str = Query(...),
     slot:          str = Query("morning"),
@@ -223,33 +204,68 @@ def device_confirm_taken(
     user_id   = user.get("user_id") or str(user["_id"])
     med_id    = medicine_name.strip().replace(" ", "_").lower()
     now_utc   = datetime.now(tz=timezone.utc)
-    today_utc = _today_utc_midnight()
+    now_ist   = _ist_now()
 
-    # Idempotency
-    existing = dose_logs_col.find_one({
-        "user_id":   user_id,
-        "med_id":    med_id,
-        "timestamp": {"$gte": today_utc},
-    })
-    if existing and existing.get("status") == "taken":
-        return {"ok": True, "message": "Already taken today", "duplicate": True}
+    # Dedupe and Idempotency Protection
+    dedupe_res = check_idempotency(dose_logs_col, user_id, med_id, slot)
+    if dedupe_res.get("is_duplicate"):
+        # Respond gracefully so IoT assumes success without error loops
+        return {
+            "ok": True, 
+            "status": "already_taken", 
+            "message": "Dose already confirmed"
+        }
 
+    # Time Window Validation
+    status, can_take = compute_slot_state(slot, now_ist)
+    if not can_take:
+        if status == AdherenceState.UPCOMING:
+            return {"ok": False, "status": "upcoming", "message": "Abhi time nahi hua hai"}
+        else:
+            # Emit critical escalation if missed
+            # In a real system, we might only do this for critical meds, but doing it generally here for architecture
+            import asyncio
+            from core.events.bus import bus
+            asyncio.create_task(bus.publish(DomainEvent.CRITICAL_MEDICATION_MISSED, {"user_id": user_id, "med_id": med_id, "slot": slot}))
+            return {"ok": False, "status": "missed", "message": f"{slot.capitalize()} slot missed"}
+
+    # Determine Device ID from key (for demo logging)
+    device_id = "ESP32_Pillbox" if key == DEVICE_KEY else "Unknown_Device"
+    dedupe_key = f"{user_id}_{med_id}_{slot}_{now_ist.date().isoformat()}"
+
+    # Insert authoritative server record
     dose_logs_col.insert_one({
-        "user_id":       user_id,
-        "med_id":        med_id,
-        "medicine_name": medicine_name.strip(),
-        "status":        "taken",
-        "slot":          slot,
-        "timestamp":     now_utc,
-        "source":        "esp_device",
-        "note":          "Confirmed by hardware pill dispenser",
+        "user_id":          user_id,
+        "med_id":           med_id,
+        "medicine_name":    medicine_name.strip(),
+        "status":           "taken",
+        "slot":             slot,
+        "timestamp":        now_utc,
+        "source":           "iot",
+        "note":             "Confirmed by hardware pill dispenser",
+        "window_state":     status.value,
+        "device_id":        device_id,
+        "dedupe_key":       dedupe_key,
+        "confirmed_via":    "pillbox_button"
     })
 
-    logger.info(f"[ESP] ✅ {medicine_name} taken by {patient_id}")
-    return {
+    logger.info(f"[ESP] ✅ {medicine_name} taken by {patient_id} (Server Auth: {status.value})")
+    
+    resp = {
         "ok":        True,
-        "message":   f"{medicine_name} marked as taken",
-        "patient_id": patient_id,
+        "status":    "active",
+        "source":    "iot",
         "slot":       slot,
-        "logged_at":  now_utc.isoformat(),
+        "message":   f"{medicine_name.capitalize()} medicine confirmed successfully"
     }
+    
+    # Demo visibility extension
+    if os.getenv("DEMO_MODE", "false").lower() == "true":
+        resp["debug"] = {
+            "server_time": now_ist.isoformat(),
+            "window_state": status.value,
+            "resolved_slot": slot,
+            "duplicate_protection_active": True
+        }
+        
+    return resp

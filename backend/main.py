@@ -185,7 +185,7 @@ app.include_router(notifications.router)
 app.include_router(analytics_router)    # /analytics/*
 app.include_router(esp_router)          # /device/* (ESP8266 IoT)
 
-from backend.voice_ai import router as voice_ai_router
+from voice_ai import router as voice_ai_router
 app.include_router(voice_ai_router, prefix="/voice-ai")
 
 

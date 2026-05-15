@@ -5,10 +5,10 @@ from fastapi.responses import HTMLResponse
 from twilio.twiml.voice_response import VoiceResponse, Gather
 from pydantic import BaseModel
 
-from backend.voice_ai.intents.classifier import classify_intent
-from backend.voice_ai.validators.confidence import is_confident
-from backend.voice_ai.handlers.adherence_updater import process_voice_adherence
-from backend.services.voice_provider import voice_client, TwilioVoiceProvider
+from voice_ai.intents.classifier import classify_intent
+from voice_ai.validators.confidence import is_confident
+from voice_ai.handlers.adherence_updater import process_voice_adherence
+from services.voice_provider import voice_client, TwilioVoiceProvider
 import os
 
 logger = logging.getLogger("Medisync.VoiceAI.Routes")

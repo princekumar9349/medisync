@@ -1,4 +1,4 @@
-from backend.voice_ai.demo_config import get_voice_confidence_threshold
+from voice_ai.demo_config import get_voice_confidence_threshold
 
 def is_confident(confidence: float) -> bool:
     """

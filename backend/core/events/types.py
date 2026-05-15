@@ -5,6 +5,7 @@ class DomainEvent(str, Enum):
     DOSE_TAKEN = "adherence.dose_taken"
     DOSE_MISSED = "adherence.dose_missed"
     DOSE_SKIPPED = "adherence.dose_skipped"
+    CRITICAL_MEDICATION_MISSED = "adherence.critical_medication_missed"
     
     # Caregiver Events
     CAREGIVER_ALERTED = "caregiver.alerted"

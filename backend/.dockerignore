@@ -16,8 +16,8 @@ myenv/
 .env.*
 env.yaml
 *.env
-firebase/serviceAccountKey.json
-firebase/*.json
+# firebase/serviceAccountKey.json is required for FCM
+# firebase/*.json
 
 # ─── Development tools ────────────────────────────────────────────────────────
 .git/
