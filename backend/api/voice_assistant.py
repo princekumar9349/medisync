@@ -57,7 +57,7 @@ def _get_user_medicines(user_id: str) -> list:
 
 
 # ── MEDISYNC CORE AI System Prompt ────────────────────────────────────────────
-def _build_core_ai_prompt(medicines: list) -> str:
+def _build_core_ai_prompt(medicines: list, history: list) -> str:
     med_list = "\n".join(
         f"  - {m.get('name','?')} | {m.get('dosage','?')} | "
         f"Morning:{m.get('morning',False)} Afternoon:{m.get('afternoon',False)} Night:{m.get('night',False)}"
@@ -66,7 +66,53 @@ def _build_core_ai_prompt(medicines: list) -> str:
 
     now_str = datetime.now().strftime("%I:%M %p, %A")
 
-    return f"""You are MEDISYNC CORE AI — the Central Voice Operating System for an Intelligent Smart Medication Adherence Ecosystem.
+    history_str = ""
+    if history:
+        lines = []
+        for h in history[-4:]:
+            lines.append(f"User: {h.get('user','')}")
+            lines.append(f"Assistant: {h.get('assistant','')}")
+        history_str = "RECENT CONVERSATION:\n" + "\n".join(lines) + "\n\n"
+
+    return f"""You are MEDISYNC PRIME AI — the autonomous voice-controlled healthcare operating system for the Medisync Smart Medication Ecosystem.
+
+You are NOT a simple chatbot. You are a real-time AI healthcare control agent.
+
+Current Time: {now_str}
+
+{history_str}PATIENT'S MEDICINE DATABASE:
+{med_list}
+
+SUPPORTED LANGUAGES: English, Hindi, Hinglish. Examples: "Slot 1 kholo", "Meri medicines dikhao", "Doctor ko message bhejo".
+
+MEMORY RULES:
+- Use conversation history to resolve pronouns: "usko", "usme", "wahi medicine", etc.
+- If user says "usko mark karo" after discussing Metformin, understand usko = Metformin.
+- Maintain full conversational continuity.
+
+AUTHORIZED ACTIONS:
+  [MEDICATION] show_medicines, next_medicine, missed_medicines, medicine_details, mark_taken, repeat_reminder, snooze_reminder
+  [PILLBOX] open_slot, close_slot, blink_leds, stop_alarm, trigger_reminder
+  [NAVIGATION] navigate_screen → screens: home, history, pillbox, medicines, scan, chat, profile, analytics, notifications, symptoms, settings, caregiver_settings, privacy, calling_settings
+  [CHAT] send_chat_message, open_chat, send_caregiver_alert
+  [SYMPTOM] add_symptom, show_symptoms
+  [EMERGENCY] emergency_alert, sos_mode
+  [ANALYTICS] show_adherence, show_analytics
+  [MISC] clarify
+
+HEALTHCARE SAFETY:
+1. NEVER invent medicines or schedules.
+2. NEVER generate fake adherence records.
+3. ALWAYS prioritize emergencies.
+4. Ask clarification if confidence < 0.60.
+
+CONFIDENCE: >0.90 proceed | 0.75-0.89 proceed | 0.60-0.74 clarify if critical | <0.60 MUST clarify
+
+PERSONALITY: calm, natural, elderly-friendly, healthcare-focused.
+GOOD: "Medicine mark ho gayi." BAD: "I would be delighted to assist you."
+
+STRICT JSON OUTPUT ONLY — no markdown, no explanation outside JSON:
+{{"action":"<action>","screen":"<screen_or_null>","slot":<number_or_null>,"medicine":"<medicine_or_null>","payload":<object_or_null>,"response":"<hinglish_tts>","confidence":<0.0-1.0>,"priority":"<low|medium|high|critical>","requires_confirmation":<bool>}}""".strip()
 
 You are an advanced AI Application Control Agent responsible for safely operating and controlling the Medisync platform through natural language voice interaction.
 
@@ -163,9 +209,9 @@ def _transcribe(audio_path: str, filename: str) -> str:
 
 
 # ── CORE AI action generation ──────────────────────────────────────────────────
-def _get_action(transcript: str, medicines: list) -> dict:
-    """Run transcript through MEDISYNC CORE AI. Returns action dict."""
-    system_prompt = _build_core_ai_prompt(medicines)
+def _get_action(transcript: str, medicines: list, history: list) -> dict:
+    """Run transcript through MEDISYNC PRIME AI. Returns action dict."""
+    system_prompt = _build_core_ai_prompt(medicines, history)
 
     for key in GROQ_KEYS:
         if not key or key.startswith("YOUR_"):
@@ -193,15 +239,16 @@ def _get_action(transcript: str, medicines: list) -> dict:
     return {
         "action": "clarify", "screen": None, "slot": None, "medicine": None,
         "payload": None, "confidence": 0.0, "priority": "low",
-        "response": "AI system se response nahi aaya. Dobara try karein.",
-        "transcript": transcript,
+        "response": "PRIME AI se response nahi aaya. Dobara try karein.",
+        "transcript": transcript, "requires_confirmation": False,
     }
 
 
 # ── Main endpoint ──────────────────────────────────────────────────────────────
 @router.post("/voice-ai/process", summary="Process voice command via MEDISYNC CORE AI")
 async def process_voice_command(
-    audio: UploadFile = File(..., description="Audio file recorded from mobile (m4a/wav/webm)"),
+    audio: UploadFile = File(..., description="Audio file from mobile (m4a/wav/webm)"),
+    history: str = None,
     current_user: dict = Depends(get_current_user),
 ):
     """
@@ -213,6 +260,17 @@ async def process_voice_command(
     4. Returns structured JSON action for the mobile app to execute.
     """
     user_id = str(current_user.get("_id", ""))
+
+    # Parse conversation history from form field
+    conv_history = []
+    if history:
+        try:
+            import json as _json
+            conv_history = _json.loads(history)
+            if not isinstance(conv_history, list):
+                conv_history = []
+        except Exception:
+            conv_history = []
 
     # Save audio to temp file
     audio_bytes = await audio.read()
@@ -252,6 +310,6 @@ async def process_voice_command(
     # Step 2: Fetch user medicines
     medicines = _get_user_medicines(user_id)
 
-    # Step 3: MEDISYNC CORE AI
-    action = _get_action(transcript, medicines)
+    # Step 3: MEDISYNC PRIME AI (with conversation history)
+    action = _get_action(transcript, medicines, conv_history)
     return action
